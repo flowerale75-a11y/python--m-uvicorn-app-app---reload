@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List
+from io import BytesIO
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, conint, confloat
+
+from openpyxl import Workbook
 
 app = FastAPI(title="Flower Landed Cost - Excel Model (Shipment + Lines)")
 
@@ -26,8 +29,8 @@ class LineIn(BaseModel):
     # If 0, backend will auto-fill from shipment kg_defaults by box_type
     kg_per_box: confloat(ge=0) = 0.0
 
-    # Invoice cost per box
-    invoice_per_box: confloat(ge=0) = 0.0
+    # NEW: price per bunch (this is what you want to enter)
+    price_per_bunch: confloat(ge=0) = 0.0
 
 
 class ShipmentIn(BaseModel):
@@ -74,13 +77,11 @@ def norm_box_type(bt: str) -> str:
 # Excel-like calculation engine
 # -----------------------------
 def calculate_shipment(s: ShipmentIn) -> Dict[str, Any]:
-    # Totals
     total_kilos = 0.0
     total_invoice = 0.0
     total_weighted_boxes = 0.0
     total_boxes = 0
 
-    # Precompute per-line basics
     basics: List[Dict[str, Any]] = []
     for ln in s.lines:
         bt = norm_box_type(ln.box_type)
@@ -90,8 +91,12 @@ def calculate_shipment(s: ShipmentIn) -> Dict[str, Any]:
         kg_default = float(s.kg_defaults.get(bt, 0.0))
         kg_per_box = float(ln.kg_per_box) if float(ln.kg_per_box) > 0 else kg_default
 
+        # NEW: invoice derived from price per bunch
+        price_per_bunch = float(ln.price_per_bunch)
+        invoice_per_box = price_per_bunch * int(ln.bunch_per_box)
+        invoice_line = invoice_per_box * boxes
+
         kg_line = kg_per_box * boxes
-        inv_line = float(ln.invoice_per_box) * boxes
 
         w = float(s.box_weights.get(bt, 1.0))
         weighted_boxes = boxes * w
@@ -110,8 +115,9 @@ def calculate_shipment(s: ShipmentIn) -> Dict[str, Any]:
                 "stems_per_box": stems_per_box,
                 "kg_per_box": kg_per_box,
                 "kg_line": kg_line,
-                "invoice_per_box": float(ln.invoice_per_box),
-                "invoice_line": inv_line,
+                "price_per_bunch": price_per_bunch,
+                "invoice_per_box": invoice_per_box,
+                "invoice_line": invoice_line,
                 "weight_factor": w,
                 "weighted_boxes": weighted_boxes,
             }
@@ -119,7 +125,7 @@ def calculate_shipment(s: ShipmentIn) -> Dict[str, Any]:
 
         total_boxes += boxes
         total_kilos += kg_line
-        total_invoice += inv_line
+        total_invoice += invoice_line
         total_weighted_boxes += weighted_boxes
 
     freight_total = total_kilos * float(s.rate_per_kg)
@@ -183,17 +189,96 @@ def calculate_shipment(s: ShipmentIn) -> Dict[str, Any]:
     return {"awb": s.awb, "totals": totals, "lines": out_lines}
 
 
+def build_excel(payload: ShipmentIn, result: Dict[str, Any]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Landed Cost"
+
+    t = result["totals"]
+
+    # Header
+    ws.append(["AWB", result.get("awb", "")])
+    ws.append(["Rate per KG", t["rate_per_kg"]])
+    ws.append(["Duty Rate", t["duty_rate"]])
+    ws.append(["Miami -> NY Total", t["miami_to_ny_total"]])
+    ws.append(["Margin A", t["margin_a"]])
+    ws.append(["Margin B", t["margin_b"]])
+    ws.append(["Default KG/FB", t["kg_defaults"].get("FB", "")])
+    ws.append(["Default KG/HB", t["kg_defaults"].get("HB", "")])
+    ws.append(["Default KG/QB", t["kg_defaults"].get("QB", "")])
+    ws.append(["Weight FB", t["box_weights"].get("FB", "")])
+    ws.append(["Weight HB", t["box_weights"].get("HB", "")])
+    ws.append(["Weight QB", t["box_weights"].get("QB", "")])
+
+    ws.append([])
+    ws.append(["TOTAL BOXES", t["total_boxes"]])
+    ws.append(["TOTAL WEIGHTED BOXES", t["total_weighted_boxes"]])
+    ws.append(["TOTAL KILOS", t["total_kilos"]])
+    ws.append(["TOTAL INVOICE", t["total_invoice"]])
+    ws.append(["FREIGHT TOTAL", t["freight_total"]])
+    ws.append(["DUTY TOTAL", t["duties_total"]])
+    ws.append(["GRAND LANDED TOTAL", t["grand_landed_total"]])
+    ws.append([])
+
+    # Table header
+    ws.append([
+        "#",
+        "FINCA","ORIGEN","PRODUCT",
+        "BOX TYPE","BOXES",
+        "BUNCH/BOX","STEMS/BUNCH","STEMS/BOX",
+        "KG/BOX","KG LINE",
+        "PRICE/BUNCH",
+        "INVOICE/BOX","INVOICE LINE",
+        "FREIGHT ALLOC","DUTY ALLOC","MIAMI ALLOC",
+        "LANDED LINE",
+        "COST/BOX","COST/BUNCH","COST/STEM",
+        "SELL/BOX @A","SELL/BOX @B",
+        "SELL/BUNCH @A","SELL/BUNCH @B"
+    ])
+
+    # Rows
+    for i, ln in enumerate(result["lines"], start=1):
+        ws.append([
+            i,
+            ln["finca"], ln["origin"], ln["product"],
+            ln["box_type"], ln["boxes"],
+            ln["bunch_per_box"], ln["stems_per_bunch"], ln["stems_per_box"],
+            ln["kg_per_box"], ln["kg_line"],
+            ln["price_per_bunch"],
+            ln["invoice_per_box"], ln["invoice_line"],
+            ln["freight_alloc"], ln["duty_alloc"], ln["miami_alloc"],
+            ln["landed_line"],
+            ln["cost_per_box"], ln["cost_per_bunch"], ln["cost_per_stem"],
+            ln["sell_box_m1"], ln["sell_box_m2"],
+            ln["sell_bunch_m1"], ln["sell_bunch_m2"]
+        ])
+
+    bio = BytesIO()
+    wb.save(bio)
+    return bio.getvalue()
+
+
 # -----------------------------
 # API
 # -----------------------------
 @app.post("/calculate_shipment")
 def api_calculate_shipment(payload: ShipmentIn):
+    return JSONResponse(calculate_shipment(payload))
+
+
+@app.post("/export.xlsx")
+def export_xlsx(payload: ShipmentIn):
     result = calculate_shipment(payload)
-    return JSONResponse(result)
+    content = build_excel(payload, result)
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=landed_cost.xlsx"},
+    )
 
 
 # -----------------------------
-# UI (Excel-like)
+# UI
 # -----------------------------
 @app.get("/", response_class=HTMLResponse)
 def index():
@@ -247,373 +332,9 @@ def index():
 </head>
 <body>
   <div class="wrap">
-    <h1>Flower Landed Cost (Excel Model: Shipment Header + Lines)</h1>
+    <h1>Flower Landed Cost (Shipment Header + Lines)</h1>
 
     <div class="card">
       <div class="muted">
-        Rules: Freight by kilos • Duty by invoice (default 22%) • Miami→NY by weighted box size • Margins editable •
-        <span class="pill">KG/Box auto-fills from Box Type defaults (editable)</span>
-      </div>
-
-      <div class="grid" style="margin-top:8px;">
-        <div>
-          <label>AWB</label>
-          <input id="awb" placeholder="AWB-123456" />
-        </div>
-        <div>
-          <label>Rate per KG ($/kg)</label>
-          <input id="rate_per_kg" type="number" step="0.0001" value="0" />
-        </div>
-        <div>
-          <label>Duty rate (invoice %) e.g. 0.22</label>
-          <input id="duty_rate" type="number" step="0.0001" value="0.22" />
-        </div>
-        <div>
-          <label>Miami → NY total ($)</label>
-          <input id="miami_to_ny_total" type="number" step="0.01" value="0" />
-        </div>
-        <div>
-          <label>Margin A</label>
-          <input id="margin_a" type="number" step="0.01" value="0.35" />
-        </div>
-        <div>
-          <label>Margin B</label>
-          <input id="margin_b" type="number" step="0.01" value="0.40" />
-        </div>
-      </div>
-
-      <div class="grid" style="margin-top:8px;">
-        <div>
-          <label>Miami→NY Weight FB</label>
-          <input id="w_fb" type="number" step="0.01" value="1.0" />
-        </div>
-        <div>
-          <label>Miami→NY Weight HB</label>
-          <input id="w_hb" type="number" step="0.01" value="0.5" />
-        </div>
-        <div>
-          <label>Miami→NY Weight QB</label>
-          <input id="w_qb" type="number" step="0.01" value="0.25" />
-        </div>
-
-        <div>
-          <label>Default KG/FB</label>
-          <input id="kg_fb" type="number" step="0.01" value="30" />
-        </div>
-        <div>
-          <label>Default KG/HB</label>
-          <input id="kg_hb" type="number" step="0.01" value="15" />
-        </div>
-        <div>
-          <label>Default KG/QB</label>
-          <input id="kg_qb" type="number" step="0.01" value="7.5" />
-        </div>
-      </div>
-
-      <div class="btns">
-        <button onclick="addLine()">Add Line</button>
-        <button class="secondary" onclick="addSample()">Add Sample Lines</button>
-        <button class="secondary" onclick="clearLines()">Clear Lines</button>
-        <button onclick="calculate()">Calculate Shipment</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin:0 0 8px 0;">Lines (like Excel rows)</h3>
-      <div class="table-wrap">
-        <table id="lines_table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>FINCA</th>
-              <th>ORIGEN</th>
-              <th>PRODUCTO</th>
-              <th>BOX TYPE</th>
-              <th class="num">BOXES</th>
-              <th class="num">BUNCH/BOX</th>
-              <th class="num">STEMS/BUNCH</th>
-              <th class="num">KG/BOX</th>
-              <th class="num">INVOICE/BOX</th>
-              <th class="small">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="lines_body"></tbody>
-        </table>
-      </div>
-      <div class="muted" style="margin-top:8px;">
-        KG/BOX auto-fills when you change box type. If you type a custom KG/BOX, it becomes an override for that line.
-      </div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin:0 0 8px 0;">Shipment Totals</h3>
-      <div class="kpis" id="kpis"></div>
-    </div>
-
-    <div class="card">
-      <h3 style="margin:0 0 8px 0;">Calculated Output (per line)</h3>
-      <div class="table-wrap">
-        <table id="out_table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>PRODUCT</th>
-              <th>BOX</th>
-              <th class="num">Boxes</th>
-              <th class="num">KG Line</th>
-              <th class="num">Invoice Line</th>
-              <th class="num">Freight Alloc</th>
-              <th class="num">Duty Alloc</th>
-              <th class="num">Miami Alloc</th>
-              <th class="num">Landed Line</th>
-              <th class="num">Cost/Box</th>
-              <th class="num">Cost/Bunch</th>
-              <th class="num">Sell/Box @A</th>
-              <th class="num">Sell/Box @B</th>
-              <th class="num">Sell/Bunch @A</th>
-              <th class="num">Sell/Bunch @B</th>
-            </tr>
-          </thead>
-          <tbody id="out_body"></tbody>
-        </table>
-      </div>
-    </div>
-
-  </div>
-
-<script>
-function $(id){ return document.getElementById(id); }
-function num(id){ return parseFloat($(id).value || "0"); }
-function val(id){ return ($(id).value || "").toString(); }
-
-function kgDefaultForBoxType(bt){
-  bt = (bt || "").toUpperCase();
-  if(bt === "FB") return num("kg_fb");
-  if(bt === "HB") return num("kg_hb");
-  if(bt === "QB") return num("kg_qb");
-  return num("kg_fb");
-}
-
-let lines = [];
-// Track whether kg_per_box is overridden by user for each line
-let kgOverride = [];
-
-function renderLines(){
-  const tbody = $("lines_body");
-  tbody.innerHTML = "";
-  lines.forEach((ln, idx) => {
-    const tr = document.createElement("tr");
-
-    tr.innerHTML = `
-      <td>${idx+1}</td>
-      <td><input data-i="${idx}" data-k="finca" value="${escapeHtml(ln.finca||"")}" /></td>
-      <td><input data-i="${idx}" data-k="origin" value="${escapeHtml(ln.origin||"")}" /></td>
-      <td><input data-i="${idx}" data-k="product" value="${escapeHtml(ln.product||"")}" /></td>
-      <td>
-        <select data-i="${idx}" data-k="box_type">
-          <option value="FB" ${ln.box_type==="FB"?"selected":""}>FB</option>
-          <option value="HB" ${ln.box_type==="HB"?"selected":""}>HB</option>
-          <option value="QB" ${ln.box_type==="QB"?"selected":""}>QB</option>
-        </select>
-      </td>
-      <td class="num"><input data-i="${idx}" data-k="boxes" type="number" min="0" step="1" value="${ln.boxes}" /></td>
-      <td class="num"><input data-i="${idx}" data-k="bunch_per_box" type="number" min="1" step="1" value="${ln.bunch_per_box}" /></td>
-      <td class="num"><input data-i="${idx}" data-k="stems_per_bunch" type="number" min="1" step="1" value="${ln.stems_per_bunch}" /></td>
-      <td class="num"><input data-i="${idx}" data-k="kg_per_box" type="number" min="0" step="0.01" value="${ln.kg_per_box}" /></td>
-      <td class="num"><input data-i="${idx}" data-k="invoice_per_box" type="number" min="0" step="0.01" value="${ln.invoice_per_box}" /></td>
-      <td class="small">
-        <button class="secondary" onclick="resetKg(${idx})" type="button">Reset KG</button>
-        <button class="danger" onclick="removeLine(${idx})" type="button">X</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  // Bind input listeners
-  tbody.querySelectorAll("input,select").forEach(el => {
-    el.addEventListener("input", onCellEdit);
-    el.addEventListener("change", onCellEdit);
-  });
-}
-
-function onCellEdit(e){
-  const el = e.target;
-  const idx = parseInt(el.getAttribute("data-i"), 10);
-  const key = el.getAttribute("data-k");
-  let v = el.value;
-
-  if(key === "boxes" || key === "bunch_per_box" || key === "stems_per_bunch"){
-    v = parseInt(v || "0", 10);
-  }
-  if(key === "kg_per_box" || key === "invoice_per_box"){
-    v = parseFloat(v || "0");
-  }
-
-  // If box type changes and KG not overridden, auto-fill
-  if(key === "box_type"){
-    lines[idx][key] = (v || "FB").toUpperCase();
-    if(!kgOverride[idx]){
-      lines[idx].kg_per_box = kgDefaultForBoxType(lines[idx].box_type);
-      renderLines();
-      return;
-    }
-  }
-
-  // If user types KG/BOX, mark override
-  if(key === "kg_per_box"){
-    kgOverride[idx] = true;
-  }
-
-  lines[idx][key] = v;
-}
-
-function addLine(){
-  lines.push({
-    finca: "", origin: "", product: "",
-    box_type: "HB",
-    boxes: 0,
-    bunch_per_box: 12,
-    stems_per_bunch: 25,
-    kg_per_box: kgDefaultForBoxType("HB"),
-    invoice_per_box: 0
-  });
-  kgOverride.push(false);
-  renderLines();
-}
-
-function addSample(){
-  lines = [
-    {finca:"Polo", origin:"ECU", product:"ROSES MONDIAL 60", box_type:"HB", boxes:10, bunch_per_box:12, stems_per_bunch:25, kg_per_box:kgDefaultForBoxType("HB"), invoice_per_box:22},
-    {finca:"Queens", origin:"ECU", product:"GYPSOPHILA", box_type:"QB", boxes:20, bunch_per_box:10, stems_per_bunch:10, kg_per_box:kgDefaultForBoxType("QB"), invoice_per_box:18},
-    {finca:"Golden", origin:"COL", product:"GREENS", box_type:"FB", boxes:6, bunch_per_box:20, stems_per_bunch:5, kg_per_box:kgDefaultForBoxType("FB"), invoice_per_box:35}
-  ];
-  kgOverride = [false,false,false];
-  renderLines();
-}
-
-function clearLines(){
-  lines = [];
-  kgOverride = [];
-  renderLines();
-  $("out_body").innerHTML = "";
-  $("kpis").innerHTML = "";
-}
-
-function removeLine(i){
-  lines.splice(i,1);
-  kgOverride.splice(i,1);
-  renderLines();
-}
-
-function resetKg(i){
-  kgOverride[i] = false;
-  const bt = (lines[i].box_type || "FB").toUpperCase();
-  lines[i].kg_per_box = kgDefaultForBoxType(bt);
-  renderLines();
-}
-
-function buildPayload(){
-  return {
-    awb: val("awb"),
-    rate_per_kg: num("rate_per_kg"),
-    duty_rate: num("duty_rate"),
-    miami_to_ny_total: num("miami_to_ny_total"),
-    box_weights: { FB: num("w_fb"), HB: num("w_hb"), QB: num("w_qb") },
-    kg_defaults: { FB: num("kg_fb"), HB: num("kg_hb"), QB: num("kg_qb") },
-    margin_a: num("margin_a"),
-    margin_b: num("margin_b"),
-    lines: lines.map(ln => ({
-      finca: ln.finca || "",
-      origin: ln.origin || "",
-      product: ln.product || "",
-      box_type: (ln.box_type || "FB").toUpperCase(),
-      boxes: parseInt(ln.boxes || 0, 10),
-      bunch_per_box: parseInt(ln.bunch_per_box || 12, 10),
-      stems_per_bunch: parseInt(ln.stems_per_bunch || 25, 10),
-      kg_per_box: parseFloat(ln.kg_per_box || 0),
-      invoice_per_box: parseFloat(ln.invoice_per_box || 0),
-    }))
-  };
-}
-
-async function calculate(){
-  const payload = buildPayload();
-  const res = await fetch("/calculate_shipment", {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
-  });
-  if(!res.ok){
-    const t = await res.text();
-    alert("Error: " + t);
-    return;
-  }
-  const data = await res.json();
-  renderKPIs(data.totals);
-  renderOutput(data.lines, data.totals);
-}
-
-function renderKPIs(t){
-  const k = $("kpis");
-  k.innerHTML = "";
-  const items = [
-    ["Total Boxes", t.total_boxes],
-    ["Weighted Boxes", t.total_weighted_boxes],
-    ["Total Kilos", t.total_kilos],
-    ["Total Invoice", "$ " + t.total_invoice],
-    ["Freight Total", "$ " + t.freight_total],
-    ["Duty Total", "$ " + t.duties_total],
-    ["Miami→NY Total", "$ " + t.miami_to_ny_total],
-    ["Grand Landed", "$ " + t.grand_landed_total],
-  ];
-  items.forEach(([name, value]) => {
-    const div = document.createElement("div");
-    div.className = "kpi";
-    div.innerHTML = `<div class="muted">${escapeHtml(name)}</div><div class="v">${escapeHtml(String(value))}</div>`;
-    k.appendChild(div);
-  });
-}
-
-function renderOutput(linesOut, totals){
-  const tbody = $("out_body");
-  tbody.innerHTML = "";
-  linesOut.forEach((ln, idx) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${idx+1}</td>
-      <td>${escapeHtml(ln.product || "")}</td>
-      <td>${escapeHtml(ln.box_type || "")}</td>
-      <td class="num">${ln.boxes}</td>
-      <td class="num">${ln.kg_line}</td>
-      <td class="num">${ln.invoice_line}</td>
-      <td class="num">${ln.freight_alloc}</td>
-      <td class="num">${ln.duty_alloc}</td>
-      <td class="num">${ln.miami_alloc}</td>
-      <td class="num">${ln.landed_line}</td>
-      <td class="num">${ln.cost_per_box}</td>
-      <td class="num">${ln.cost_per_bunch}</td>
-      <td class="num">${ln.sell_box_m1}</td>
-      <td class="num">${ln.sell_box_m2}</td>
-      <td class="num">${ln.sell_bunch_m1}</td>
-      <td class="num">${ln.sell_bunch_m2}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function escapeHtml(str){
-  return (str ?? "").toString()
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-// Start with one empty line
-addLine();
-</script>
-</body>
-</html>
-"""
-    return HTMLResponse(html)
+        Freight by kilos • Duty by invoice (22% default) • Miami→NY by weighted box size •
+        <span class="pill
