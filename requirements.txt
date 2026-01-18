@@ -1,4 +1,6 @@
-fastapi
-uvicorn
-pydantic
-openpyxl
+app.py
+requirements.txt
+static/
+  login.html
+  index.html
+  app.js
