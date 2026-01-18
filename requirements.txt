@@ -1,6 +1,11 @@
-app.py
-requirements.txt
-static/
-  login.html
-  index.html
-  app.js
+fastapi
+uvicorn
+pydantic
+openpyxl
+SQLAlchemy>=2.0
+psycopg2-binary
+python-jose
+passlib[bcrypt]
+google-auth
+requests
+python-multipart
