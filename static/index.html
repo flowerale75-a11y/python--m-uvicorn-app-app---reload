@@ -2,694 +2,375 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Flower Landed Cost</title>
   <style>
     :root{
       --bg:#eaf4ff; --card:#fff; --text:#0b1a2a; --muted:#4b6075; --border:#cfe2f7;
-      --btn:#2b6cb0; --btn2:#1f4f86; --danger:#c53030; --soft:#f7fbff;
+      --btn:#2b6cb0; --btn2:#1f4f86; --soft:#f7fbff; --danger:#c53030;
     }
     body{ margin:0; font-family:Arial,sans-serif; background:var(--bg); color:var(--text); }
     .wrap{ max-width:1600px; margin:18px auto; padding:0 12px; }
-    h1{ margin:0 0 12px 0; font-size:22px; }
+    h1{ margin:0 0 12px 0; font-size:20px; }
     .card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:14px;
-      box-shadow:0 2px 8px rgba(0,0,0,.06);
-      margin-bottom:12px;
-      overflow-x:hidden;
+      background:var(--card); border:1px solid var(--border); border-radius:12px;
+      padding:14px; box-shadow:0 2px 8px rgba(0,0,0,.06); margin-bottom:12px;
     }
-    label{ font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
-    input,select{
-      width:100%; box-sizing:border-box; padding:9px 10px;
-      border:1px solid var(--border); border-radius:10px; background:#fff; font-size:14px;
+    label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
+    input, select{
+      width:100%; padding:9px; border:1px solid var(--border); border-radius:10px;
+      background:var(--soft); color:var(--text); box-sizing:border-box;
     }
-    .btn{ padding:10px 12px; border:none; border-radius:10px; background:var(--btn); color:#fff; cursor:pointer; font-weight:700; }
-    .btn:hover{ background:var(--btn2); }
-    .btn-outline{ padding:10px 12px; border-radius:10px; border:1px solid var(--btn); background:#fff; color:var(--btn); cursor:pointer; font-weight:800; }
-    .btn-danger{ padding:10px 12px; border:none; border-radius:10px; background:var(--danger); color:#fff; cursor:pointer; font-weight:800; }
-    .hint{ font-size:12px; color:var(--muted); margin-top:8px; }
-    .small{ font-size:12px; color:var(--muted); }
-
-    .row-top{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    .row-presets{ display:grid; grid-template-columns:1fr 260px 120px 120px 120px; gap:10px; align-items:end; }
-
-    .row{
-      display:grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap:10px;
-      align-items:end;
+    .grid{ display:grid; grid-template-columns: repeat(6, 1fr); gap:10px; }
+    @media (max-width: 1100px){ .grid{ grid-template-columns: repeat(2, 1fr); } }
+    .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+    button{
+      padding:10px 14px; border-radius:10px; border:1px solid var(--border);
+      background:var(--btn); color:white; cursor:pointer; font-weight:700;
     }
-    .actions{
-      display:flex;
-      gap:10px;
-      justify-content:flex-end;
-      align-items:center;
-      grid-column: 1 / -1;
-      flex-wrap:wrap;
-    }
+    button.secondary{ background:white; color:var(--btn2); }
+    button.danger{ background:var(--danger); color:white; border-color:#f2b8b8; }
 
-    .summary{ display:grid; grid-template-columns: repeat(6, 1fr); gap:10px; }
-    .metric{ background:var(--soft); border:1px solid var(--border); border-radius:12px; padding:12px; }
-    .metric .k{ font-size:12px; color:var(--muted); margin-bottom:6px; }
-    .metric .v{ font-size:18px; font-weight:900; }
-
-    /* Shipment summary (new) */
-    .ship-summary{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:10px; }
-    .ship-breakdown{ display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap:10px; margin-top:10px; }
-    .pill{
-      display:inline-block;
-      font-size:12px;
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      background:var(--soft);
-      color:var(--muted);
-      margin-left:8px;
-    }
-
-    table{ width:100%; border-collapse:collapse; margin-top:10px; font-size:13px; }
-    th,td{ text-align:left; padding:10px; border-bottom:1px solid var(--border); }
-    th{ color:var(--muted); font-weight:800; }
-
-    .results{
-      white-space:pre-wrap;
-      font-family:ui-monospace,Menlo,Consolas,monospace;
-      font-size:12px;
-      background:var(--soft);
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:12px;
-      max-height:260px;
-      overflow:auto;
-    }
-
-    @media (max-width: 1200px){
-      .row-presets{ grid-template-columns:1fr 1fr; }
-      .summary{ grid-template-columns:1fr 1fr; }
-      .ship-summary{ grid-template-columns: 1fr; }
-      .actions{ justify-content:flex-start; }
-      .row-top{ grid-template-columns: 1fr; }
-    }
+    table{ width:100%; border-collapse:collapse; }
+    th, td{ padding:7px; border-bottom:1px solid var(--border); font-size:12px; text-align:left; white-space:nowrap; }
+    th{ position:sticky; top:0; background:var(--card); z-index:1; }
+    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:12px; }
+    .muted{ color:var(--muted); font-size:12px; }
+    .kpis{ display:grid; grid-template-columns: repeat(6, 1fr); gap:10px; margin-top:10px; }
+    @media (max-width: 1100px){ .kpis{ grid-template-columns: repeat(2, 1fr); } }
+    .kpi{ background:var(--soft); border:1px solid var(--border); border-radius:12px; padding:10px; }
+    .kpi .v{ font-size:16px; font-weight:800; margin-top:4px; }
+    .num{ text-align:right; }
+    .small{ font-size:11px; }
   </style>
 </head>
-
 <body>
-  <div class="wrap">
-    <h1>Flower Landed Cost Calculator</h1>
+<div class="wrap">
+  <h1>Flower Landed Cost (Price per Bunch)</h1>
 
-    <!-- Top: Quick Fill + Export -->
-    <div class="card">
-      <div class="row-top">
-        <div>
-          <b>Quick Fill (saved rows)</b>
-          <div class="small">Pick a saved row to auto-fill the form (fast for repeating products).</div>
-          <div class="row" style="margin-top:10px;">
-            <div>
-              <label>Select saved row</label>
-              <select id="quick_fill_select"></select>
-            </div>
-            <div class="actions">
-              <button class="btn-outline" id="quick_fill_load_btn" type="button">Load into Form</button>
-              <button class="btn-outline" id="refresh_btn" type="button">Refresh</button>
-              <button class="btn" id="export_btn" type="button">Export Excel CSV</button>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <b>Tips</b>
-          <div class="small">
-            • Everything you calculate is saved automatically in History.<br>
-            • Use <b>Load</b> in History to edit/update a row.<br>
-            • Shipment totals are grouped by <b>AWB</b> (recommended).<br>
-            • Use Product Catalog to auto-fill packing defaults (Option A).
-          </div>
-        </div>
-      </div>
+  <div class="card">
+    <div class="muted">
+      Inputs match your Excel: Freight by kilos • Duty by invoice (default 22%) • Miami→NY by box-size weights • You enter PRICE/BUNCH only.
     </div>
 
-    <!-- Presets -->
-    <div class="card">
-      <div class="row-presets">
-        <div><label>Save preset name</label><input id="preset_name" placeholder="e.g., Liberty MIA Roses FB"/></div>
-        <div><label>Load preset</label><select id="preset_select"></select></div>
-        <button class="btn" id="save_btn" type="button">Save</button>
-        <button class="btn-outline" id="load_btn" type="button">Load</button>
-        <button class="btn-danger" id="delete_btn" type="button">Delete</button>
-      </div>
-      <div class="hint">Presets save all fields (like a template).</div>
+    <div class="grid" style="margin-top:8px;">
+      <div><label>AWB</label><input id="awb" placeholder="AWB-123456" /></div>
+      <div><label>Rate per KG ($/kg)</label><input id="rate_per_kg" type="number" step="0.0001" value="0" /></div>
+      <div><label>Duty rate (invoice %) e.g. 0.22</label><input id="duty_rate" type="number" step="0.0001" value="0.22" /></div>
+      <div><label>Miami → NY total ($)</label><input id="miami_to_ny_total" type="number" step="0.01" value="0" /></div>
+      <div><label>Margin A</label><input id="margin_a" type="number" step="0.01" value="0.35" /></div>
+      <div><label>Margin B</label><input id="margin_b" type="number" step="0.01" value="0.40" /></div>
     </div>
 
-    <!-- Product Catalog -->
-    <div class="card">
-      <b>Product Catalog (Defaults)</b>
-      <div class="small">Option A: selecting a product auto-fills structure fields only (Origen, Box Type, Bunch/Box, Stems/Bunch, Peso Kilo).</div>
+    <div class="grid" style="margin-top:8px;">
+      <div><label>Miami→NY Weight FB</label><input id="w_fb" type="number" step="0.01" value="1.0" /></div>
+      <div><label>Miami→NY Weight HB</label><input id="w_hb" type="number" step="0.01" value="0.5" /></div>
+      <div><label>Miami→NY Weight QB</label><input id="w_qb" type="number" step="0.01" value="0.25" /></div>
 
-      <div class="row" style="margin-top:10px;">
-        <div><label>Product name</label><input id="cat_product_name" placeholder="e.g., Roses Explorer 60cm"></div>
-        <div><label>Default ORIGEN</label><input id="cat_default_origen" value="MIA"></div>
-
-        <div><label>Default BOX TYPE</label>
-          <select id="cat_default_box_type">
-            <option value="FB">FB</option><option value="HB">HB</option><option value="QB">QB</option>
-          </select>
-        </div>
-
-        <div><label>Default BUNCH/BOX</label><input id="cat_default_bunch_per_box" type="number" step="0.01" min="0" value="20"></div>
-        <div><label>Default STEMS/BUNCH</label><input id="cat_default_stems_per_bunch" type="number" min="1" value="10"></div>
-        <div><label>Default PESO KILO</label><input id="cat_default_peso_kilo" type="number" step="0.01" min="0" value="28"></div>
-
-        <div class="actions">
-          <button class="btn" id="cat_save_btn" type="button">Save to Catalog</button>
-          <button class="btn-outline" id="cat_refresh_btn" type="button">Refresh Catalog</button>
-        </div>
-      </div>
-
-      <div class="hint">Saving again with the same product name will update defaults.</div>
+      <div><label>Default KG/FB</label><input id="kg_fb" type="number" step="0.01" value="30" /></div>
+      <div><label>Default KG/HB</label><input id="kg_hb" type="number" step="0.01" value="15" /></div>
+      <div><label>Default KG/QB</label><input id="kg_qb" type="number" step="0.01" value="7.5" /></div>
     </div>
 
-    <!-- Main Form -->
-    <div class="card">
-      <form id="form">
-        <input type="hidden" id="editing_history_id" value="">
-
-        <div class="row">
-          <div><label>FINCA</label><input id="finca" value="Liberty"></div>
-          <div><label>ORIGEN</label><input id="origen" value="MIA"></div>
-
-          <div>
-            <label>PRODUCTO (Catalog)</label>
-            <input id="producto" list="products_list" value="Roses" placeholder="Start typing…">
-            <datalist id="products_list"></datalist>
-          </div>
-
-          <div>
-            <label>AWB (Shipment key)</label>
-            <input id="awb" placeholder="Recommended: use same AWB for the whole flight">
-          </div>
-
-          <div><label># BOXES</label><input id="boxes" type="number" min="1" value="1"></div>
-
-          <div><label>BOX TYPE</label>
-            <select id="box_type"><option value="FB">FB</option><option value="HB">HB</option><option value="QB">QB</option></select>
-          </div>
-
-          <div><label>BUNCH/BOX</label><input id="bunch_per_box" type="number" min="0" step="0.01" value="20"></div>
-          <div><label>STEMS/BUNCH</label><input id="stems_per_bunch" type="number" min="1" value="10"></div>
-          <div><label>PRICE/BUNCH</label><input id="price_per_bunch" type="number" min="0" step="0.01" value="0"></div>
-
-          <div><label>PESO KILO</label><input id="peso_kilo" type="number" min="0" step="0.01" value="28"></div>
-          <div><label>RATE ($/KG)</label><input id="rate" type="number" min="0" step="0.01" value="2.5"></div>
-
-          <div><label>DUTIES %</label><input id="duties_pct" type="number" min="0" step="0.01" value="7"></div>
-          <div><label>ARANCEL %</label><input id="arancel_pct" type="number" min="0" step="0.01" value="10"></div>
-
-          <div><label>Admin $ (flight)</label><input id="admin_fee_total" type="number" min="0" step="0.01" value="5"></div>
-          <div><label>Boxes/flight</label><input id="boxes_in_shipment" type="number" min="1" value="1"></div>
-
-          <div><label>Broker $/box</label><input id="broker_fee_per_box" type="number" min="0" step="0.01" value="0"></div>
-          <div><label>Extra $/box</label><input id="extra_cost_per_box" type="number" min="0" step="0.01" value="0"></div>
-
-          <div><label>Freight MIA→NY (override)</label><input id="freight_mia_ny_override" type="number" min="0" step="0.01" value="0"></div>
-
-          <div class="actions">
-            <button class="btn" id="calc_save_btn" type="submit">Calculate + Save</button>
-            <button class="btn-outline" id="update_btn" type="button" style="display:none;">Update Row</button>
-            <button class="btn-outline" id="cancel_edit_btn" type="button" style="display:none;">Cancel Edit</button>
-          </div>
-        </div>
-
-        <div class="hint">Extra $/box is your manual “space”. Freight override: if 0 → FB=6, HB=16, QB=8.</div>
-      </form>
-    </div>
-
-    <!-- Per-box Summary -->
-    <div class="card">
-      <div class="summary">
-        <div class="metric"><div class="k">LANDED MIAMI / BOX</div><div class="v" id="m_mia">$—</div></div>
-        <div class="metric"><div class="k">FREIGHT MIA→NY / BOX</div><div class="v" id="m_freight">$—</div></div>
-        <div class="metric"><div class="k">LANDED NYC / BOX</div><div class="v" id="m_nyc">$—</div></div>
-        <div class="metric"><div class="k">BUNCH REAL PRICE</div><div class="v" id="m_bunch">$—</div></div>
-        <div class="metric"><div class="k">SELL @ 35% / BUNCH</div><div class="v" id="m_35">$—</div></div>
-        <div class="metric"><div class="k">SELL @ 40% / BUNCH</div><div class="v" id="m_40">$—</div></div>
-      </div>
-    </div>
-
-    <!-- ✅ Shipment Summary (NEW) -->
-    <div class="card">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
-        <div>
-          <b>Shipment Summary</b>
-          <span class="pill" id="ship_key_pill">AWB: —</span>
-          <div class="small">Totals for all rows that share the same shipment key (AWB recommended).</div>
-        </div>
-        <div style="display:flex; gap:10px;">
-          <button class="btn-outline" id="ship_refresh_btn" type="button">Refresh Shipment Totals</button>
-        </div>
-      </div>
-
-      <div class="ship-summary">
-        <div class="metric"><div class="k">TOTAL INVESTMENT FLOWERS</div><div class="v" id="ship_flowers">$—</div></div>
-        <div class="metric"><div class="k">TOTAL TRANSPORTATION</div><div class="v" id="ship_transport">$—</div></div>
-        <div class="metric"><div class="k">GRAND TOTAL</div><div class="v" id="ship_grand">$—</div></div>
-      </div>
-
-      <div class="ship-breakdown">
-        <div class="metric"><div class="k">Air Freight Total</div><div class="v" id="ship_air">$—</div></div>
-        <div class="metric"><div class="k">Duties Total</div><div class="v" id="ship_duties">$—</div></div>
-        <div class="metric"><div class="k">Arancel Total</div><div class="v" id="ship_arancel">$—</div></div>
-        <div class="metric"><div class="k">Extras Total (Admin+Broker+Manual)</div><div class="v" id="ship_extras">$—</div></div>
-        <div class="metric"><div class="k">Ground MIA→NY Total</div><div class="v" id="ship_ground">$—</div></div>
-      </div>
-
-      <div class="small" id="ship_meta" style="margin-top:10px;">Ready.</div>
-    </div>
-
-    <!-- History -->
-    <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-        <div><b>History (last 50)</b></div>
-        <div style="display:flex; gap:10px;">
-          <button class="btn-outline" id="hist_btn" type="button">Refresh History</button>
-        </div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th>ID</th><th>Date</th><th>Finca</th><th>Origen</th><th>Producto</th><th>Boxes</th><th>Box</th>
-            <th>Landed NYC/Box</th><th>Bunch Cost</th><th>Sell 35</th><th>Sell 40</th><th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="hist_rows">
-          <tr><td colspan="12" class="small">No history yet.</td></tr>
-        </tbody>
-      </table>
-      <div class="small">Load = edit/update. Delete = remove row.</div>
-    </div>
-
-    <!-- Debug -->
-    <div class="card">
-      <div class="small">Debug JSON</div>
-      <div class="results" id="debug">Ready.</div>
+    <div class="btns">
+      <button onclick="addLine()">Add Line</button>
+      <button class="secondary" onclick="addSample()">Add Sample</button>
+      <button class="secondary" onclick="clearLines()">Clear</button>
+      <button onclick="calculate()">Calculate</button>
+      <button class="secondary" onclick="exportExcel()">Export Excel</button>
     </div>
   </div>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const money = (v) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : `$${Number(v).toFixed(2)}`;
-    function show(obj){ $("debug").textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2); }
+  <div class="card">
+    <h3 style="margin:0 0 8px 0;">Lines</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>FINCA</th>
+            <th>ORIGEN</th>
+            <th>PRODUCT</th>
+            <th>BOX TYPE</th>
+            <th class="num">BOXES</th>
+            <th class="num">BUNCH/BOX</th>
+            <th class="num">STEMS/BUNCH</th>
+            <th class="num">KG/BOX</th>
+            <th class="num">PRICE/BUNCH</th>
+            <th class="small">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="lines_body"></tbody>
+      </table>
+    </div>
+    <div class="muted" style="margin-top:8px;">
+      KG/BOX auto-fills from defaults when you change box type. If you type KG, it overrides. Invoice/Box is auto: Price/Bunch × Bunch/Box.
+    </div>
+  </div>
 
-    function getShipmentKey(){
-      // Backend uses shipment_id if provided; UI uses AWB as main key.
-      // If AWB is empty, shipment totals won't work properly (it will fallback on server).
-      return ($("awb").value || "").trim();
+  <div class="card">
+    <h3 style="margin:0 0 8px 0;">Shipment Totals</h3>
+    <div class="kpis" id="kpis"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:0 0 8px 0;">Results</h3>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>PRODUCT</th>
+            <th>BOX</th>
+            <th class="num">Boxes</th>
+            <th class="num">KG Line</th>
+            <th class="num">Invoice Line</th>
+            <th class="num">Freight</th>
+            <th class="num">Duty</th>
+            <th class="num">Miami</th>
+            <th class="num">Landed</th>
+            <th class="num">Cost/Box</th>
+            <th class="num">Cost/Bunch</th>
+            <th class="num">Sell/Box A</th>
+            <th class="num">Sell/Box B</th>
+            <th class="num">Sell/Bunch A</th>
+            <th class="num">Sell/Bunch B</th>
+          </tr>
+        </thead>
+        <tbody id="out_body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function $(id){ return document.getElementById(id); }
+function num(id){ return parseFloat($(id).value || "0"); }
+function val(id){ return ($(id).value || "").toString(); }
+
+function kgDefaultFor(bt){
+  bt = (bt || "").toUpperCase();
+  if(bt === "FB") return num("kg_fb");
+  if(bt === "HB") return num("kg_hb");
+  if(bt === "QB") return num("kg_qb");
+  return num("kg_hb");
+}
+
+let lines = [];
+let kgOverride = [];
+
+function escapeHtml(str){
+  return (str ?? "").toString()
+    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
+}
+
+function addLine(){
+  lines.push({
+    finca:"", origin:"", product:"",
+    box_type:"HB", boxes:0,
+    bunch_per_box:12, stems_per_bunch:25,
+    kg_per_box:kgDefaultFor("HB"),
+    price_per_bunch:0
+  });
+  kgOverride.push(false);
+  renderLines();
+}
+
+function addSample(){
+  lines = [
+    {finca:"Liberty", origin:"MIA", product:"ROSES MONDIAL 60", box_type:"HB", boxes:10, bunch_per_box:12, stems_per_bunch:25, kg_per_box:kgDefaultFor("HB"), price_per_bunch:1.75},
+    {finca:"Queens", origin:"MIA", product:"GYPSOPHILA", box_type:"QB", boxes:20, bunch_per_box:10, stems_per_bunch:10, kg_per_box:kgDefaultFor("QB"), price_per_bunch:2.10},
+  ];
+  kgOverride = [false,false];
+  renderLines();
+}
+
+function clearLines(){
+  lines = [];
+  kgOverride = [];
+  $("lines_body").innerHTML = "";
+  $("kpis").innerHTML = "";
+  $("out_body").innerHTML = "";
+}
+
+function removeLine(i){
+  lines.splice(i,1);
+  kgOverride.splice(i,1);
+  renderLines();
+}
+
+function resetKg(i){
+  kgOverride[i] = false;
+  const bt = (lines[i].box_type || "HB").toUpperCase();
+  lines[i].kg_per_box = kgDefaultFor(bt);
+  renderLines();
+}
+
+function onEdit(e){
+  const el = e.target;
+  const i = parseInt(el.dataset.i, 10);
+  const k = el.dataset.k;
+
+  let v = el.value;
+
+  if(["boxes","bunch_per_box","stems_per_bunch"].includes(k)) v = parseInt(v || "0", 10);
+  if(["kg_per_box","price_per_bunch"].includes(k)) v = parseFloat(v || "0");
+
+  if(k === "box_type"){
+    lines[i][k] = (v || "HB").toUpperCase();
+    if(!kgOverride[i]){
+      lines[i].kg_per_box = kgDefaultFor(lines[i].box_type);
+      renderLines();
+      return;
     }
+  }
 
-    async function refreshShipmentSummary(){
-      const key = getShipmentKey();
-      $("ship_key_pill").textContent = `AWB: ${key || "—"}`;
+  if(k === "kg_per_box") kgOverride[i] = true;
+  lines[i][k] = v;
+}
 
-      if(!key){
-        $("ship_meta").textContent = "Enter an AWB to see shipment totals (use the same AWB for all lines of the flight).";
-        $("ship_flowers").textContent = "$—";
-        $("ship_transport").textContent = "$—";
-        $("ship_grand").textContent = "$—";
-        $("ship_air").textContent = "$—";
-        $("ship_duties").textContent = "$—";
-        $("ship_arancel").textContent = "$—";
-        $("ship_extras").textContent = "$—";
-        $("ship_ground").textContent = "$—";
-        return;
-      }
+function renderLines(){
+  const tbody = $("lines_body");
+  tbody.innerHTML = "";
+  lines.forEach((ln, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td><input data-i="${i}" data-k="finca" value="${escapeHtml(ln.finca)}"></td>
+      <td><input data-i="${i}" data-k="origin" value="${escapeHtml(ln.origin)}"></td>
+      <td><input data-i="${i}" data-k="product" value="${escapeHtml(ln.product)}"></td>
+      <td>
+        <select data-i="${i}" data-k="box_type">
+          <option value="FB" ${ln.box_type==="FB"?"selected":""}>FB</option>
+          <option value="HB" ${ln.box_type==="HB"?"selected":""}>HB</option>
+          <option value="QB" ${ln.box_type==="QB"?"selected":""}>QB</option>
+        </select>
+      </td>
+      <td class="num"><input data-i="${i}" data-k="boxes" type="number" min="0" step="1" value="${ln.boxes}"></td>
+      <td class="num"><input data-i="${i}" data-k="bunch_per_box" type="number" min="1" step="1" value="${ln.bunch_per_box}"></td>
+      <td class="num"><input data-i="${i}" data-k="stems_per_bunch" type="number" min="1" step="1" value="${ln.stems_per_bunch}"></td>
+      <td class="num"><input data-i="${i}" data-k="kg_per_box" type="number" min="0" step="0.01" value="${ln.kg_per_box}"></td>
+      <td class="num"><input data-i="${i}" data-k="price_per_bunch" type="number" min="0" step="0.01" value="${ln.price_per_bunch}"></td>
+      <td class="small">
+        <button class="secondary" type="button" onclick="resetKg(${i})">Reset KG</button>
+        <button class="danger" type="button" onclick="removeLine(${i})">X</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
 
-      try{
-        const res = await fetch(`/shipment/summary/${encodeURIComponent(key)}`);
-        const json = await res.json();
-        if(!json.found){
-          $("ship_meta").textContent = `No rows found yet for shipment "${key}".`;
-          return;
-        }
+  tbody.querySelectorAll("input,select").forEach(el => {
+    el.addEventListener("input", onEdit);
+    el.addEventListener("change", onEdit);
+  });
+}
 
-        $("ship_flowers").textContent = money(json.totals?.total_investment_flowers);
-        $("ship_transport").textContent = money(json.totals?.total_transportation);
-        $("ship_grand").textContent = money(json.totals?.grand_total);
+function payload(){
+  return {
+    awb: val("awb"),
+    rate_per_kg: num("rate_per_kg"),
+    duty_rate: num("duty_rate"),
+    miami_to_ny_total: num("miami_to_ny_total"),
+    margin_a: num("margin_a"),
+    margin_b: num("margin_b"),
+    box_weights: { FB: num("w_fb"), HB: num("w_hb"), QB: num("w_qb") },
+    kg_defaults: { FB: num("kg_fb"), HB: num("kg_hb"), QB: num("kg_qb") },
+    lines: lines.map(x => ({
+      finca: x.finca || "",
+      origin: x.origin || "",
+      product: x.product || "",
+      box_type: (x.box_type || "HB").toUpperCase(),
+      boxes: parseInt(x.boxes || 0, 10),
+      bunch_per_box: parseInt(x.bunch_per_box || 12, 10),
+      stems_per_bunch: parseInt(x.stems_per_bunch || 25, 10),
+      kg_per_box: parseFloat(x.kg_per_box || 0),
+      price_per_bunch: parseFloat(x.price_per_bunch || 0),
+    }))
+  };
+}
 
-        $("ship_air").textContent = money(json.transportation_breakdown?.air_freight_total);
-        $("ship_duties").textContent = money(json.transportation_breakdown?.duties_total);
-        $("ship_arancel").textContent = money(json.transportation_breakdown?.arancel_total);
-        $("ship_extras").textContent = money(json.transportation_breakdown?.extras_total);
-        $("ship_ground").textContent = money(json.transportation_breakdown?.ground_mia_ny_total);
+async function calculate(){
+  const res = await fetch("/calculate", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload())
+  });
+  if(!res.ok){ alert(await res.text()); return; }
+  const data = await res.json();
+  renderKPIs(data.totals);
+  renderOut(data.lines);
+}
 
-        $("ship_meta").textContent = `Lines: ${json.lines} | Boxes total: ${json.boxes_total} | Shipment: ${json.shipment_id}`;
-      } catch (e){
-        $("ship_meta").textContent = "Error loading shipment totals. Check backend endpoint /shipment/summary/{awb}.";
-      }
-    }
+function renderKPIs(t){
+  const el = $("kpis");
+  el.innerHTML = "";
+  const items = [
+    ["Total Boxes", t.total_boxes],
+    ["Total Weighted Boxes", t.total_weighted_boxes],
+    ["Total Kilos", t.total_kilos],
+    ["Total Invoice", "$ " + (t.total_invoice||0).toFixed(2)],
+    ["Freight Total", "$ " + (t.freight_total||0).toFixed(2)],
+    ["Duty Total", "$ " + (t.duty_total||0).toFixed(2)],
+    ["Miami→NY", "$ " + (t.miami_to_ny_total||0).toFixed(2)],
+    ["Grand Landed", "$ " + (t.grand_landed_total||0).toFixed(2)],
+  ];
+  items.forEach(([k,v]) => {
+    const d = document.createElement("div");
+    d.className = "kpi";
+    d.innerHTML = `<div class="muted">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div>`;
+    el.appendChild(d);
+  });
+}
 
-    function payload(){
-      return {
-        finca: $("finca").value.trim(),
-        origen: $("origen").value.trim(),
-        producto: $("producto").value.trim(),
-        awb: $("awb").value.trim(),
+function renderOut(linesOut){
+  const tbody = $("out_body");
+  tbody.innerHTML = "";
+  linesOut.forEach((r, i) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td>${escapeHtml(r.product || "")}</td>
+      <td>${escapeHtml(r.box_type || "")}</td>
+      <td class="num">${r.boxes}</td>
+      <td class="num">${(r.kg_line||0).toFixed(2)}</td>
+      <td class="num">${(r.invoice_line||0).toFixed(2)}</td>
+      <td class="num">${(r.freight_alloc||0).toFixed(2)}</td>
+      <td class="num">${(r.duty_alloc||0).toFixed(2)}</td>
+      <td class="num">${(r.miami_alloc||0).toFixed(2)}</td>
+      <td class="num">${(r.landed_line||0).toFixed(2)}</td>
+      <td class="num">${(r.cost_per_box||0).toFixed(2)}</td>
+      <td class="num">${(r.cost_per_bunch||0).toFixed(3)}</td>
+      <td class="num">${(r.sell_box_m1||0).toFixed(2)}</td>
+      <td class="num">${(r.sell_box_m2||0).toFixed(2)}</td>
+      <td class="num">${(r.sell_bunch_m1||0).toFixed(3)}</td>
+      <td class="num">${(r.sell_bunch_m2||0).toFixed(3)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
 
-        box_type: $("box_type").value,
-        boxes: Number($("boxes").value),
+async function exportExcel(){
+  const res = await fetch("/export.xlsx", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(payload())
+  });
+  if(!res.ok){ alert(await res.text()); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "landed_cost.xlsx";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
-        bunch_per_box: Number($("bunch_per_box").value),
-        stems_per_bunch: Number($("stems_per_bunch").value),
-        price_per_bunch: Number($("price_per_bunch").value),
+addLine();
+</script>
 
-        peso_kilo: Number($("peso_kilo").value),
-        rate: Number($("rate").value),
-
-        duties_pct: Number($("duties_pct").value),
-        arancel_pct: Number($("arancel_pct").value),
-
-        admin_fee_total: Number($("admin_fee_total").value),
-        boxes_in_shipment: Number($("boxes_in_shipment").value),
-        broker_fee_per_box: Number($("broker_fee_per_box").value),
-
-        extra_cost_per_box: Number($("extra_cost_per_box").value),
-        freight_mia_ny_override: Number($("freight_mia_ny_override").value)
-      };
-    }
-
-    function apply(p){
-      $("finca").value = p.finca ?? "";
-      $("origen").value = p.origen ?? "";
-      $("producto").value = p.producto ?? "";
-      $("awb").value = p.awb ?? "";
-      $("box_type").value = p.box_type ?? "FB";
-      $("boxes").value = p.boxes ?? 1;
-      $("bunch_per_box").value = p.bunch_per_box ?? 20;
-      $("stems_per_bunch").value = p.stems_per_bunch ?? 10;
-      $("price_per_bunch").value = p.price_per_bunch ?? 0;
-      $("peso_kilo").value = p.peso_kilo ?? 28;
-      $("rate").value = p.rate ?? 2.5;
-      $("duties_pct").value = p.duties_pct ?? 7;
-      $("arancel_pct").value = p.arancel_pct ?? 10;
-      $("admin_fee_total").value = p.admin_fee_total ?? 5;
-      $("boxes_in_shipment").value = p.boxes_in_shipment ?? 1;
-      $("broker_fee_per_box").value = p.broker_fee_per_box ?? 0;
-      $("extra_cost_per_box").value = p.extra_cost_per_box ?? 0;
-      $("freight_mia_ny_override").value = p.freight_mia_ny_override ?? 0;
-    }
-
-    function render(r){
-      $("m_mia").textContent = money(r.LANDED_PRICE_MIAMI);
-      $("m_freight").textContent = money(r.FREIGHT_MIAMI_TO_NY);
-      $("m_nyc").textContent = money(r.LANDED_PRICE_NYC);
-      $("m_bunch").textContent = money(r.BUNCH_REAL_PRICE);
-      $("m_35").textContent = money(r.MARGIN_35_SELL_PER_BUNCH);
-      $("m_40").textContent = money(r.MARGIN_40_SELL_PER_BUNCH);
-    }
-
-    function enterEditMode(historyId){
-      $("editing_history_id").value = String(historyId);
-      $("calc_save_btn").style.display = "none";
-      $("update_btn").style.display = "inline-block";
-      $("cancel_edit_btn").style.display = "inline-block";
-    }
-
-    function exitEditMode(){
-      $("editing_history_id").value = "";
-      $("calc_save_btn").style.display = "inline-block";
-      $("update_btn").style.display = "none";
-      $("cancel_edit_btn").style.display = "none";
-    }
-
-    async function refreshPresets(){
-      const res = await fetch("/presets");
-      const json = await res.json();
-      const sel = $("preset_select");
-      sel.innerHTML = "";
-      const o0 = document.createElement("option");
-      o0.value = ""; o0.textContent = "-- select preset --";
-      sel.appendChild(o0);
-      for (const p of (json.presets||[])){
-        const o = document.createElement("option");
-        o.value = p.id; o.textContent = `${p.name} (#${p.id})`;
-        sel.appendChild(o);
-      }
-    }
-
-    async function refreshCatalog(){
-      const res = await fetch("/catalog/products");
-      const json = await res.json();
-      const list = $("products_list");
-      list.innerHTML = "";
-      for (const p of (json.products || [])){
-        const opt = document.createElement("option");
-        opt.value = p.product_name;
-        list.appendChild(opt);
-      }
-    }
-
-    async function autofillFromProductName(name){
-      name = (name || "").trim();
-      if(!name) return;
-      const res = await fetch(`/catalog/products/lookup?name=${encodeURIComponent(name)}`);
-      const json = await res.json();
-      if(!json.found) return;
-      const p = json.product;
-
-      $("origen").value = p.default_origen;
-      $("box_type").value = p.default_box_type;
-      $("bunch_per_box").value = p.default_bunch_per_box;
-      $("stems_per_bunch").value = p.default_stems_per_bunch;
-      $("peso_kilo").value = p.default_peso_kilo;
-
-      show({autofilled_from_catalog: p});
-    }
-
-    async function refreshHistory(){
-      const res = await fetch("/history?limit=50");
-      const json = await res.json();
-      const rows = json.history || [];
-
-      // Quick Fill dropdown
-      const q = $("quick_fill_select");
-      q.innerHTML = "";
-      const q0 = document.createElement("option");
-      q0.value = ""; q0.textContent = "-- choose saved row --";
-      q.appendChild(q0);
-      for (const r of rows){
-        const label = `#${r.id} | ${r.finca} | ${r.origen} | ${r.producto} | ${r.box_type} | boxes:${r.boxes}`;
-        const opt = document.createElement("option");
-        opt.value = r.id;
-        opt.textContent = label;
-        q.appendChild(opt);
-      }
-
-      if(!rows.length){
-        $("hist_rows").innerHTML = `<tr><td colspan="12" class="small">No history yet.</td></tr>`;
-        return;
-      }
-
-      $("hist_rows").innerHTML = rows.map(r => `
-        <tr>
-          <td>${r.id}</td>
-          <td>${r.updated_at ? r.updated_at + " (upd)" : r.created_at}</td>
-          <td>${r.finca}</td><td>${r.origen}</td><td>${r.producto}</td>
-          <td>${r.boxes}</td><td>${r.box_type}</td>
-          <td>${money(r.landed_price_nyc)}</td>
-          <td>${money(r.bunch_real_price)}</td>
-          <td>${money(r.sell_35_per_bunch)}</td>
-          <td>${money(r.sell_40_per_bunch)}</td>
-          <td style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn-outline" data-load="${r.id}">Load</button>
-            <button class="btn-danger" data-del="${r.id}">Delete</button>
-          </td>
-        </tr>
-      `).join("");
-
-      document.querySelectorAll("button[data-load]").forEach(btn=>{
-        btn.onclick = async ()=>{
-          const id = btn.getAttribute("data-load");
-          await loadHistoryIntoForm(id, true);
-        };
-      });
-
-      document.querySelectorAll("button[data-del]").forEach(btn=>{
-        btn.onclick = async ()=>{
-          const id = btn.getAttribute("data-del");
-          if(!confirm(`Delete history row #${id}?`)) return;
-          const res2 = await fetch(`/history/${id}`, {method:"DELETE"});
-          const out = await res2.json();
-          show(out);
-          await refreshHistory();
-          if($("editing_history_id").value === String(id)) exitEditMode();
-          await refreshShipmentSummary();
-        };
-      });
-    }
-
-    async function loadHistoryIntoForm(id, enterEdit){
-      if(!id) return;
-      const res2 = await fetch(`/history/${id}`);
-      const h = await res2.json();
-      if(h.error) return alert(h.error);
-
-      const p = JSON.parse(h.payload_json);
-      apply(p);
-
-      const result = JSON.parse(h.result_json);
-      render(result);
-      show(result);
-
-      if(enterEdit) enterEditMode(id);
-      else exitEditMode();
-
-      await refreshShipmentSummary();
-    }
-
-    // Presets
-    $("save_btn").onclick = async ()=>{
-      const name = $("preset_name").value.trim();
-      if(!name) return alert("Type a preset name first.");
-      const body = { name, payload: payload() };
-      const res = await fetch("/presets", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-      show(await res.json());
-      await refreshPresets();
-    };
-
-    $("load_btn").onclick = async ()=>{
-      const id = $("preset_select").value;
-      if(!id) return;
-      const res = await fetch(`/presets/${id}`);
-      const json = await res.json();
-      if(json.error) return alert(json.error);
-      const p = JSON.parse(json.payload_json);
-      apply(p);
-      show(`Loaded preset: ${json.name}`);
-      exitEditMode();
-      await refreshShipmentSummary();
-    };
-
-    $("delete_btn").onclick = async ()=>{
-      const id = $("preset_select").value;
-      if(!id) return alert("Select a preset to delete.");
-      if(!confirm("Delete this preset?")) return;
-      const res = await fetch(`/presets/${id}`, {method:"DELETE"});
-      show(await res.json());
-      await refreshPresets();
-    };
-
-    // Catalog
-    $("cat_refresh_btn").onclick = refreshCatalog;
-
-    $("cat_save_btn").onclick = async ()=>{
-      const body = {
-        product_name: $("cat_product_name").value.trim(),
-        default_origen: $("cat_default_origen").value.trim(),
-        default_box_type: $("cat_default_box_type").value,
-        default_bunch_per_box: Number($("cat_default_bunch_per_box").value),
-        default_stems_per_bunch: Number($("cat_default_stems_per_bunch").value),
-        default_peso_kilo: Number($("cat_default_peso_kilo").value),
-      };
-      if(!body.product_name) return alert("Type a product name.");
-      const res = await fetch("/catalog/products", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)});
-      const json = await res.json();
-      show(json);
-      await refreshCatalog();
-      $("producto").value = body.product_name;
-      await autofillFromProductName(body.product_name);
-    };
-
-    $("producto").addEventListener("change", (e)=>autofillFromProductName(e.target.value));
-    $("producto").addEventListener("blur", (e)=>autofillFromProductName(e.target.value));
-
-    // Quick Fill button
-    $("quick_fill_load_btn").onclick = async ()=>{
-      const id = $("quick_fill_select").value;
-      if(!id) return;
-      await loadHistoryIntoForm(id, false); // load but do not enter edit mode
-      show(`Loaded saved row #${id} into form (not editing).`);
-      await refreshShipmentSummary();
-    };
-
-    // Export
-    $("export_btn").onclick = async ()=>{
-      const res = await fetch("/export/excel.csv?limit=5000");
-      const json = await res.json();
-      const blob = new Blob([json.csv], {type:"text/csv;charset=utf-8;"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = json.filename || "excel_export.csv";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      show("Downloaded excel_export.csv (open with Excel).");
-    };
-
-    // Refresh
-    $("refresh_btn").onclick = async ()=>{
-      await refreshPresets();
-      await refreshHistory();
-      await refreshCatalog();
-      await refreshShipmentSummary();
-      show("Refreshed.");
-    };
-    $("hist_btn").onclick = async ()=>{
-      await refreshHistory();
-      await refreshShipmentSummary();
-    };
-
-    // Shipment refresh button
-    $("ship_refresh_btn").onclick = refreshShipmentSummary;
-
-    // Calculate + Save
-    $("form").onsubmit = async (e)=>{
-      e.preventDefault();
-      const res = await fetch("/calculate", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload())});
-      const json = await res.json();
-      render(json);
-      show(json);
-      await refreshHistory();
-      exitEditMode();
-      await refreshShipmentSummary();
-    };
-
-    // Update
-    $("update_btn").onclick = async ()=>{
-      const id = $("editing_history_id").value;
-      if(!id) return;
-      const req = { history_id: Number(id), payload: payload() };
-      const res = await fetch("/history/update", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(req)});
-      const json = await res.json();
-      if(json.updated){
-        render(json.result);
-        show(json);
-        await refreshHistory();
-        exitEditMode();
-        await refreshShipmentSummary();
-      } else {
-        show(json);
-        alert("Update failed (row not found).");
-      }
-    };
-
-    $("cancel_edit_btn").onclick = ()=>{
-      exitEditMode();
-      show("Edit canceled.");
-    };
-
-    // Auto refresh shipment totals when AWB changes (small delay)
-    let awbTimer = null;
-    $("awb").addEventListener("input", ()=>{
-      clearTimeout(awbTimer);
-      awbTimer = setTimeout(refreshShipmentSummary, 350);
-    });
-
-    (async ()=>{
-      await refreshPresets();
-      await refreshHistory();
-      await refreshCatalog();
-      await refreshShipmentSummary();
-    })();
-  </script>
 </body>
 </html>
