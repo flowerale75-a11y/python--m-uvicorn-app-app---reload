@@ -3,18 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Flower Landed Cost</title>
+  <title>Shipment Investment</title>
   <style>
     :root{
       --bg:#eaf4ff; --card:#fff; --text:#0b1a2a; --muted:#4b6075; --border:#cfe2f7;
-      --btn:#2b6cb0; --btn2:#1f4f86; --soft:#f7fbff; --danger:#c53030;
+      --btn:#2b6cb0; --btn2:#1f4f86; --danger:#c53030; --soft:#f7fbff;
     }
     body{ margin:0; font-family:Arial,sans-serif; background:var(--bg); color:var(--text); }
     .wrap{ max-width:1600px; margin:18px auto; padding:0 12px; }
     h1{ margin:0 0 12px 0; font-size:20px; }
     .card{
-      background:var(--card); border:1px solid var(--border); border-radius:12px;
-      padding:14px; box-shadow:0 2px 8px rgba(0,0,0,.06); margin-bottom:12px;
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:12px;
+      padding:14px;
+      box-shadow:0 2px 8px rgba(0,0,0,.06);
+      margin-bottom:12px;
     }
     label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
     input, select{
@@ -30,7 +34,6 @@
     }
     button.secondary{ background:white; color:var(--btn2); }
     button.danger{ background:var(--danger); color:white; border-color:#f2b8b8; }
-
     table{ width:100%; border-collapse:collapse; }
     th, td{ padding:7px; border-bottom:1px solid var(--border); font-size:12px; text-align:left; white-space:nowrap; }
     th{ position:sticky; top:0; background:var(--card); z-index:1; }
@@ -46,11 +49,11 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Flower Landed Cost (Price per Bunch)</h1>
+  <h1>Shipment Investment Calculator (Target Profit)</h1>
 
   <div class="card">
     <div class="muted">
-      Inputs match your Excel: Freight by kilos • Duty by invoice (default 22%) • Miami→NY by box-size weights • You enter PRICE/BUNCH only.
+      Total Investment = Invoice + Freight + Duty + Miami→NY + Expenses. Target Profit default 35% (editable).
     </div>
 
     <div class="grid" style="margin-top:8px;">
@@ -58,8 +61,8 @@
       <div><label>Rate per KG ($/kg)</label><input id="rate_per_kg" type="number" step="0.0001" value="0" /></div>
       <div><label>Duty rate (invoice %) e.g. 0.22</label><input id="duty_rate" type="number" step="0.0001" value="0.22" /></div>
       <div><label>Miami → NY total ($)</label><input id="miami_to_ny_total" type="number" step="0.01" value="0" /></div>
-      <div><label>Margin A</label><input id="margin_a" type="number" step="0.01" value="0.35" /></div>
-      <div><label>Margin B</label><input id="margin_b" type="number" step="0.01" value="0.40" /></div>
+      <div><label>Expenses total ($) (placeholder)</label><input id="expenses_total" type="number" step="0.01" value="0" /></div>
+      <div><label>Target Profit % (of sales) e.g. 0.35</label><input id="target_profit_pct" type="number" step="0.01" value="0.35" /></div>
     </div>
 
     <div class="grid" style="margin-top:8px;">
@@ -82,7 +85,7 @@
   </div>
 
   <div class="card">
-    <h3 style="margin:0 0 8px 0;">Lines</h3>
+    <h3 style="margin:0 0 8px 0;">Lines (buy price per BUNCH)</h3>
     <div class="table-wrap">
       <table>
         <thead>
@@ -104,17 +107,17 @@
       </table>
     </div>
     <div class="muted" style="margin-top:8px;">
-      KG/BOX auto-fills from defaults when you change box type. If you type KG, it overrides. Invoice/Box is auto: Price/Bunch × Bunch/Box.
+      KG/BOX auto-fills from defaults when you change box type. If you type KG, it overrides (Reset KG to restore default).
     </div>
   </div>
 
   <div class="card">
-    <h3 style="margin:0 0 8px 0;">Shipment Totals</h3>
+    <h3 style="margin:0 0 8px 0;">Investment Summary</h3>
     <div class="kpis" id="kpis"></div>
   </div>
 
   <div class="card">
-    <h3 style="margin:0 0 8px 0;">Results</h3>
+    <h3 style="margin:0 0 8px 0;">Line Allocation Results</h3>
     <div class="table-wrap">
       <table>
         <thead>
@@ -123,18 +126,13 @@
             <th>PRODUCT</th>
             <th>BOX</th>
             <th class="num">Boxes</th>
-            <th class="num">KG Line</th>
             <th class="num">Invoice Line</th>
             <th class="num">Freight</th>
             <th class="num">Duty</th>
             <th class="num">Miami</th>
-            <th class="num">Landed</th>
+            <th class="num">Landed (no expenses)</th>
             <th class="num">Cost/Box</th>
             <th class="num">Cost/Bunch</th>
-            <th class="num">Sell/Box A</th>
-            <th class="num">Sell/Box B</th>
-            <th class="num">Sell/Bunch A</th>
-            <th class="num">Sell/Bunch B</th>
           </tr>
         </thead>
         <tbody id="out_body"></tbody>
@@ -273,8 +271,8 @@ function payload(){
     rate_per_kg: num("rate_per_kg"),
     duty_rate: num("duty_rate"),
     miami_to_ny_total: num("miami_to_ny_total"),
-    margin_a: num("margin_a"),
-    margin_b: num("margin_b"),
+    expenses_total: num("expenses_total"),
+    target_profit_pct: num("target_profit_pct"),
     box_weights: { FB: num("w_fb"), HB: num("w_hb"), QB: num("w_qb") },
     kg_defaults: { FB: num("kg_fb"), HB: num("kg_hb"), QB: num("kg_qb") },
     lines: lines.map(x => ({
@@ -307,14 +305,17 @@ function renderKPIs(t){
   const el = $("kpis");
   el.innerHTML = "";
   const items = [
-    ["Total Boxes", t.total_boxes],
-    ["Total Weighted Boxes", t.total_weighted_boxes],
-    ["Total Kilos", t.total_kilos],
     ["Total Invoice", "$ " + (t.total_invoice||0).toFixed(2)],
     ["Freight Total", "$ " + (t.freight_total||0).toFixed(2)],
     ["Duty Total", "$ " + (t.duty_total||0).toFixed(2)],
     ["Miami→NY", "$ " + (t.miami_to_ny_total||0).toFixed(2)],
-    ["Grand Landed", "$ " + (t.grand_landed_total||0).toFixed(2)],
+    ["Expenses", "$ " + (t.expenses_total||0).toFixed(2)],
+    ["TOTAL INVESTMENT", "$ " + (t.total_investment||0).toFixed(2)],
+    ["Target Profit %", (t.target_profit_pct||0)],
+    ["Required Sales", "$ " + (t.required_sales||0).toFixed(2)],
+    ["Expected Profit $", "$ " + (t.expected_profit||0).toFixed(2)],
+    ["Total Boxes", t.total_boxes],
+    ["Total Kilos", t.total_kilos],
   ];
   items.forEach(([k,v]) => {
     const d = document.createElement("div");
@@ -334,18 +335,13 @@ function renderOut(linesOut){
       <td>${escapeHtml(r.product || "")}</td>
       <td>${escapeHtml(r.box_type || "")}</td>
       <td class="num">${r.boxes}</td>
-      <td class="num">${(r.kg_line||0).toFixed(2)}</td>
       <td class="num">${(r.invoice_line||0).toFixed(2)}</td>
       <td class="num">${(r.freight_alloc||0).toFixed(2)}</td>
       <td class="num">${(r.duty_alloc||0).toFixed(2)}</td>
       <td class="num">${(r.miami_alloc||0).toFixed(2)}</td>
       <td class="num">${(r.landed_line||0).toFixed(2)}</td>
       <td class="num">${(r.cost_per_box||0).toFixed(2)}</td>
-      <td class="num">${(r.cost_per_bunch||0).toFixed(3)}</td>
-      <td class="num">${(r.sell_box_m1||0).toFixed(2)}</td>
-      <td class="num">${(r.sell_box_m2||0).toFixed(2)}</td>
-      <td class="num">${(r.sell_bunch_m1||0).toFixed(3)}</td>
-      <td class="num">${(r.sell_bunch_m2||0).toFixed(3)}</td>
+      <td class="num">${(r.cost_per_bunch||0).toFixed(4)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -362,7 +358,7 @@ async function exportExcel(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "landed_cost.xlsx";
+  a.download = "shipment_investment.xlsx";
   document.body.appendChild(a);
   a.click();
   a.remove();
