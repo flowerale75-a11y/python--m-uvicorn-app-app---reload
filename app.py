@@ -1,284 +1,389 @@
-from __future__ import annotations
-
-from typing import Dict, List
-from io import BytesIO
-
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, conint, confloat
+from pydantic import BaseModel, Field
+from typing import List, Optional
+import sqlite3
+import os
+from datetime import datetime
 
-from openpyxl import Workbook
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(APP_DIR, "pos.db")
 
+def db_conn():
+    # SQLite is perfect for MVP. (Render filesystem is ephemeral on free tiers; later we can swap to Postgres.)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# -----------------------------
-# App + Static UI
-# -----------------------------
-app = FastAPI(title="Flower Landed Cost")
+def init_db():
+    conn = db_conn()
+    cur = conn.cursor()
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        barcode TEXT UNIQUE,
+        price_cents INTEGER NOT NULL DEFAULT 0,
+        taxable INTEGER NOT NULL DEFAULT 1,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL
+    );
+    """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL,
+        subtotal_cents INTEGER NOT NULL,
+        tax_cents INTEGER NOT NULL,
+        total_cents INTEGER NOT NULL,
+        payment_method TEXT NOT NULL,
+        notes TEXT
+    );
+    """)
 
-@app.get("/")
-def ui():
-    return FileResponse("static/index.html")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        product_id INTEGER,
+        name_snapshot TEXT NOT NULL,
+        barcode_snapshot TEXT,
+        unit_price_cents INTEGER NOT NULL,
+        qty INTEGER NOT NULL,
+        taxable_snapshot INTEGER NOT NULL,
+        line_total_cents INTEGER NOT NULL,
+        FOREIGN KEY(order_id) REFERENCES orders(id)
+    );
+    """)
 
+    conn.commit()
+    conn.close()
+
+app = FastAPI(title="BloomNext POS", version="0.1.0")
+
+# Serve static assets
+static_dir = os.path.join(APP_DIR, "static")
+os.makedirs(static_dir, exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.on_event("startup")
+def startup():
+    init_db()
+
+# ---------- Models ----------
+class ProductIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    barcode: Optional[str] = Field(default=None, max_length=100)
+    price: float = Field(..., ge=0)  # dollars
+    taxable: bool = True
+    active: bool = True
+
+class ProductOut(BaseModel):
+    id: int
+    name: str
+    barcode: Optional[str]
+    price: float
+    taxable: bool
+    active: bool
+
+class CartItemIn(BaseModel):
+    product_id: int
+    qty: int = Field(..., ge=1, le=999)
+
+class CheckoutIn(BaseModel):
+    items: List[CartItemIn]
+    payment_method: str = Field(..., pattern="^(cash|card|other)$")
+    tax_enabled: bool = False
+    tax_rate: float = Field(default=0.0, ge=0.0, le=0.25)  # 0.08875 = NYC example
+    notes: Optional[str] = None
+
+class OrderItemOut(BaseModel):
+    name: str
+    barcode: Optional[str]
+    unit_price: float
+    qty: int
+    taxable: bool
+    line_total: float
+
+class OrderOut(BaseModel):
+    id: int
+    created_at: str
+    subtotal: float
+    tax: float
+    total: float
+    payment_method: str
+    notes: Optional[str]
+    items: List[OrderItemOut]
+
+# ---------- Helpers ----------
+def dollars_to_cents(x: float) -> int:
+    return int(round(x * 100))
+
+def cents_to_dollars(c: int) -> float:
+    return round(c / 100.0, 2)
+
+def row_product_to_out(r: sqlite3.Row) -> ProductOut:
+    return ProductOut(
+        id=r["id"],
+        name=r["name"],
+        barcode=r["barcode"],
+        price=cents_to_dollars(r["price_cents"]),
+        taxable=bool(r["taxable"]),
+        active=bool(r["active"])
+    )
+
+# ---------- Pages ----------
+@app.get("/", response_class=HTMLResponse)
+def home():
+    return FileResponse(os.path.join(APP_DIR, "index.html"))
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"ok": True, "service": "bloomnext-pos"}
 
+# ---------- Products API ----------
+@app.get("/api/products", response_model=List[ProductOut])
+def list_products(active_only: bool = False):
+    conn = db_conn()
+    cur = conn.cursor()
+    if active_only:
+        cur.execute("SELECT * FROM products WHERE active=1 ORDER BY id DESC;")
+    else:
+        cur.execute("SELECT * FROM products ORDER BY id DESC;")
+    rows = cur.fetchall()
+    conn.close()
+    return [row_product_to_out(r) for r in rows]
 
-# -----------------------------
-# Models
-# -----------------------------
-class Line(BaseModel):
-    finca: str = ""
-    origin: str = ""
-    product: str = ""
+@app.get("/api/products/lookup", response_model=Optional[ProductOut])
+def lookup_product(barcode: str):
+    conn = db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM products WHERE barcode=? AND active=1 LIMIT 1;", (barcode,))
+    r = cur.fetchone()
+    conn.close()
+    if not r:
+        return None
+    return row_product_to_out(r)
 
-    box_type: str = "HB"
-    boxes: conint(ge=0) = 0
+@app.post("/api/products", response_model=ProductOut)
+def create_product(p: ProductIn):
+    conn = db_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "INSERT INTO products (name, barcode, price_cents, taxable, active, created_at) VALUES (?, ?, ?, ?, ?, ?);",
+            (
+                p.name.strip(),
+                (p.barcode.strip() if p.barcode else None),
+                dollars_to_cents(p.price),
+                1 if p.taxable else 0,
+                1 if p.active else 0,
+                datetime.utcnow().isoformat()
+            )
+        )
+        conn.commit()
+        new_id = cur.lastrowid
+        cur.execute("SELECT * FROM products WHERE id=?;", (new_id,))
+        r = cur.fetchone()
+        return row_product_to_out(r)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Barcode already exists. Use a different barcode.")
+    finally:
+        conn.close()
 
-    bunch_per_box: conint(ge=1) = 12
-    stems_per_bunch: conint(ge=1) = 25
+@app.put("/api/products/{product_id}", response_model=ProductOut)
+def update_product(product_id: int, p: ProductIn):
+    conn = db_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM products WHERE id=?;", (product_id,))
+        existing = cur.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Product not found")
 
-    kg_per_box: confloat(ge=0) = 0.0  # 0 => auto from defaults
-    price_per_bunch: confloat(ge=0) = 0.0  # you buy by bunch
+        cur.execute(
+            "UPDATE products SET name=?, barcode=?, price_cents=?, taxable=?, active=? WHERE id=?;",
+            (
+                p.name.strip(),
+                (p.barcode.strip() if p.barcode else None),
+                dollars_to_cents(p.price),
+                1 if p.taxable else 0,
+                1 if p.active else 0,
+                product_id
+            )
+        )
+        conn.commit()
+        cur.execute("SELECT * FROM products WHERE id=?;", (product_id,))
+        r = cur.fetchone()
+        return row_product_to_out(r)
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Barcode already exists. Use a different barcode.")
+    finally:
+        conn.close()
 
+@app.delete("/api/products/{product_id}")
+def delete_product(product_id: int):
+    conn = db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM products WHERE id=?;", (product_id,))
+    existing = cur.fetchone()
+    if not existing:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Product not found")
 
-class Shipment(BaseModel):
-    awb: str = ""
+    # Soft delete (active=0)
+    cur.execute("UPDATE products SET active=0 WHERE id=?;", (product_id,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
-    rate_per_kg: confloat(ge=0) = 0.0
-    duty_rate: confloat(ge=0, le=1) = 0.22
+# ---------- Orders API ----------
+@app.post("/api/orders", response_model=OrderOut)
+def checkout(payload: CheckoutIn):
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="Cart is empty")
 
-    miami_to_ny_total: confloat(ge=0) = 0.0
-    expenses_total: confloat(ge=0) = 0.0  # single bucket for now (later we'll itemize)
+    conn = db_conn()
+    cur = conn.cursor()
 
-    # Target profit (default 35%, editable)
-    target_profit_pct: confloat(ge=0, le=0.95) = 0.35
+    # Load products for cart
+    product_map = {}
+    for it in payload.items:
+        cur.execute("SELECT * FROM products WHERE id=? AND active=1;", (it.product_id,))
+        r = cur.fetchone()
+        if not r:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"Product not found or inactive: {it.product_id}")
+        product_map[it.product_id] = r
 
-    # Editable defaults
-    kg_defaults: Dict[str, confloat(ge=0)]
-    box_weights: Dict[str, confloat(ge=0)]
+    subtotal_cents = 0
+    taxable_base_cents = 0
+    items_out: List[OrderItemOut] = []
 
-    lines: List[Line]
+    for it in payload.items:
+        pr = product_map[it.product_id]
+        unit = int(pr["price_cents"])
+        qty = int(it.qty)
+        line = unit * qty
+        subtotal_cents += line
 
+        is_taxable = bool(pr["taxable"])
+        if payload.tax_enabled and is_taxable:
+            taxable_base_cents += line
 
-# -----------------------------
-# Helpers
-# -----------------------------
-def safe_div(a: float, b: float) -> float:
-    return a / b if b else 0.0
-
-
-def normalize_box_type(bt: str) -> str:
-    bt = (bt or "").strip().upper()
-    return bt if bt in ("FB", "HB", "QB") else "HB"
-
-
-def calc_core(s: Shipment) -> dict:
-    total_kilos = 0.0
-    total_invoice = 0.0
-    total_weighted_boxes = 0.0
-    total_boxes = 0
-
-    pre = []
-
-    for ln in s.lines:
-        bt = normalize_box_type(ln.box_type)
-
-        kg_box = float(ln.kg_per_box or 0.0)
-        if kg_box <= 0:
-            kg_box = float(s.kg_defaults.get(bt, 0.0))
-
-        kg_line = kg_box * ln.boxes
-
-        # You buy by bunch:
-        invoice_box = float(ln.price_per_bunch) * int(ln.bunch_per_box)
-        invoice_line = invoice_box * ln.boxes
-
-        w = float(s.box_weights.get(bt, 1.0))
-        weighted_boxes = ln.boxes * w
-
-        pre.append(
-            {
-                "finca": ln.finca,
-                "origin": ln.origin,
-                "product": ln.product,
-                "box_type": bt,
-                "boxes": int(ln.boxes),
-                "bunch_per_box": int(ln.bunch_per_box),
-                "stems_per_bunch": int(ln.stems_per_bunch),
-                "price_per_bunch": float(ln.price_per_bunch),
-                "kg_per_box_used": float(kg_box),
-                "kg_line": float(kg_line),
-                "invoice_box": float(invoice_box),
-                "invoice_line": float(invoice_line),
-                "weighted_boxes": float(weighted_boxes),
-            }
+        items_out.append(
+            OrderItemOut(
+                name=pr["name"],
+                barcode=pr["barcode"],
+                unit_price=cents_to_dollars(unit),
+                qty=qty,
+                taxable=is_taxable,
+                line_total=cents_to_dollars(line)
+            )
         )
 
-        total_boxes += int(ln.boxes)
-        total_kilos += kg_line
-        total_invoice += invoice_line
-        total_weighted_boxes += weighted_boxes
+    tax_cents = 0
+    if payload.tax_enabled and payload.tax_rate > 0:
+        tax_cents = int(round(taxable_base_cents * payload.tax_rate))
 
-    freight_total = total_kilos * float(s.rate_per_kg)
-    duty_total = total_invoice * float(s.duty_rate)
-    miami_total = float(s.miami_to_ny_total)
+    total_cents = subtotal_cents + tax_cents
 
-    # NEW: Total Investment (cash in)
-    expenses_total = float(s.expenses_total)
-    total_investment = total_invoice + freight_total + duty_total + miami_total + expenses_total
+    created_at = datetime.utcnow().isoformat()
 
-    # NEW: Target profit (profit % of SALES)
-    tp = float(s.target_profit_pct)
-    required_sales = safe_div(total_investment, (1 - tp))
-    expected_profit = required_sales - total_investment
-
-    out_lines = []
-    grand_landed_lines = 0.0  # sum of landed_line allocations (invoice+freight+duty+miami only)
-
-    for r in pre:
-        freight_alloc = safe_div(r["kg_line"], total_kilos) * freight_total
-        duty_alloc = safe_div(r["invoice_line"], total_invoice) * duty_total
-        miami_alloc = safe_div(r["weighted_boxes"], total_weighted_boxes) * miami_total
-
-        landed_line = r["invoice_line"] + freight_alloc + duty_alloc + miami_alloc
-        grand_landed_lines += landed_line
-
-        cost_per_box = safe_div(landed_line, r["boxes"])
-        cost_per_bunch = safe_div(cost_per_box, r["bunch_per_box"])
-
-        out_lines.append(
-            {
-                **r,
-                "freight_alloc": freight_alloc,
-                "duty_alloc": duty_alloc,
-                "miami_alloc": miami_alloc,
-                "landed_line": landed_line,
-                "cost_per_box": cost_per_box,
-                "cost_per_bunch": cost_per_bunch,
-            }
-        )
-
-    totals = {
-        "total_boxes": total_boxes,
-        "total_weighted_boxes": round(total_weighted_boxes, 4),
-        "total_kilos": round(total_kilos, 4),
-
-        "total_invoice": round(total_invoice, 2),
-        "freight_total": round(freight_total, 2),
-        "duty_total": round(duty_total, 2),
-        "miami_to_ny_total": round(miami_total, 2),
-
-        # NEW investment + target profit
-        "expenses_total": round(expenses_total, 2),
-        "total_investment": round(total_investment, 2),
-        "target_profit_pct": round(tp, 4),
-        "required_sales": round(required_sales, 2),
-        "expected_profit": round(expected_profit, 2),
-
-        # For reference: landed allocations without expenses
-        "grand_landed_without_expenses": round(grand_landed_lines, 2),
-    }
-
-    return {"awb": s.awb, "totals": totals, "lines": out_lines}
-
-
-# -----------------------------
-# API
-# -----------------------------
-@app.post("/calculate")
-def calculate(s: Shipment):
-    return JSONResponse(calc_core(s))
-
-
-@app.post("/export.xlsx")
-def export_xlsx(s: Shipment):
-    data = calc_core(s)
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Landed Cost"
-
-    headers = [
-        "AWB",
-        "FINCA",
-        "ORIGIN",
-        "PRODUCT",
-        "BOX TYPE",
-        "BOXES",
-        "BUNCH/BOX",
-        "STEMS/BUNCH",
-        "PRICE/BUNCH",
-        "INVOICE/BOX",
-        "INVOICE LINE",
-        "KG/BOX",
-        "KG LINE",
-        "FREIGHT ALLOC",
-        "DUTY ALLOC",
-        "MIAMI->NY ALLOC",
-        "LANDED LINE",
-        "COST/BOX",
-        "COST/BUNCH",
-    ]
-    ws.append(headers)
-
-    for r in data["lines"]:
-        ws.append(
-            [
-                data["awb"],
-                r["finca"],
-                r["origin"],
-                r["product"],
-                r["box_type"],
-                r["boxes"],
-                r["bunch_per_box"],
-                r["stems_per_bunch"],
-                round(r["price_per_bunch"], 4),
-                round(r["invoice_box"], 4),
-                round(r["invoice_line"], 2),
-                round(r["kg_per_box_used"], 4),
-                round(r["kg_line"], 4),
-                round(r["freight_alloc"], 2),
-                round(r["duty_alloc"], 2),
-                round(r["miami_alloc"], 2),
-                round(r["landed_line"], 2),
-                round(r["cost_per_box"], 4),
-                round(r["cost_per_bunch"], 4),
-            ]
-        )
-
-    # Totals / Investment summary
-    ws2 = wb.create_sheet("Investment Summary")
-    t = data["totals"]
-
-    ws2.append(["AWB", data["awb"]])
-    ws2.append(["Total Invoice", t["total_invoice"]])
-    ws2.append(["Freight Total", t["freight_total"]])
-    ws2.append(["Duty Total", t["duty_total"]])
-    ws2.append(["Miami->NY Total", t["miami_to_ny_total"]])
-    ws2.append(["Expenses Total (placeholder)", t["expenses_total"]])
-    ws2.append(["TOTAL INVESTMENT", t["total_investment"]])
-    ws2.append([])
-    ws2.append(["Target Profit % (of sales)", t["target_profit_pct"]])
-    ws2.append(["Required Sales", t["required_sales"]])
-    ws2.append(["Expected Profit $", t["expected_profit"]])
-    ws2.append([])
-    ws2.append(["Total Boxes", t["total_boxes"]])
-    ws2.append(["Total Kilos", t["total_kilos"]])
-    ws2.append(["Grand Landed (no expenses)", t["grand_landed_without_expenses"]])
-
-    bio = BytesIO()
-    wb.save(bio)
-    bio.seek(0)
-
-    filename = "shipment_investment.xlsx"
-    return StreamingResponse(
-        bio,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    # Create order
+    cur.execute(
+        "INSERT INTO orders (created_at, subtotal_cents, tax_cents, total_cents, payment_method, notes) VALUES (?, ?, ?, ?, ?, ?);",
+        (created_at, subtotal_cents, tax_cents, total_cents, payload.payment_method, payload.notes)
     )
+    order_id = cur.lastrowid
+
+    # Create order items snapshots
+    for it in payload.items:
+        pr = product_map[it.product_id]
+        unit = int(pr["price_cents"])
+        qty = int(it.qty)
+        line = unit * qty
+        cur.execute(
+            """INSERT INTO order_items
+               (order_id, product_id, name_snapshot, barcode_snapshot, unit_price_cents, qty, taxable_snapshot, line_total_cents)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?);""",
+            (
+                order_id,
+                it.product_id,
+                pr["name"],
+                pr["barcode"],
+                unit,
+                qty,
+                1 if bool(pr["taxable"]) else 0,
+                line
+            )
+        )
+
+    conn.commit()
+
+    # Read back
+    cur.execute("SELECT * FROM orders WHERE id=?;", (order_id,))
+    o = cur.fetchone()
+    cur.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id ASC;", (order_id,))
+    oi = cur.fetchall()
+    conn.close()
+
+    return OrderOut(
+        id=o["id"],
+        created_at=o["created_at"],
+        subtotal=cents_to_dollars(o["subtotal_cents"]),
+        tax=cents_to_dollars(o["tax_cents"]),
+        total=cents_to_dollars(o["total_cents"]),
+        payment_method=o["payment_method"],
+        notes=o["notes"],
+        items=[
+            OrderItemOut(
+                name=r["name_snapshot"],
+                barcode=r["barcode_snapshot"],
+                unit_price=cents_to_dollars(r["unit_price_cents"]),
+                qty=r["qty"],
+                taxable=bool(r["taxable_snapshot"]),
+                line_total=cents_to_dollars(r["line_total_cents"])
+            ) for r in oi
+        ]
+    )
+
+@app.get("/api/orders/recent", response_model=List[OrderOut])
+def recent_orders(limit: int = 20):
+    limit = max(1, min(limit, 100))
+    conn = db_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM orders ORDER BY id DESC LIMIT ?;", (limit,))
+    orders = cur.fetchall()
+
+    out: List[OrderOut] = []
+    for o in orders:
+        cur.execute("SELECT * FROM order_items WHERE order_id=? ORDER BY id ASC;", (o["id"],))
+        oi = cur.fetchall()
+        out.append(
+            OrderOut(
+                id=o["id"],
+                created_at=o["created_at"],
+                subtotal=cents_to_dollars(o["subtotal_cents"]),
+                tax=cents_to_dollars(o["tax_cents"]),
+                total=cents_to_dollars(o["total_cents"]),
+                payment_method=o["payment_method"],
+                notes=o["notes"],
+                items=[
+                    OrderItemOut(
+                        name=r["name_snapshot"],
+                        barcode=r["barcode_snapshot"],
+                        unit_price=cents_to_dollars(r["unit_price_cents"]),
+                        qty=r["qty"],
+                        taxable=bool(r["taxable_snapshot"]),
+                        line_total=cents_to_dollars(r["line_total_cents"])
+                    ) for r in oi
+                ]
+            )
+        )
+
+    conn.close()
+    return out
