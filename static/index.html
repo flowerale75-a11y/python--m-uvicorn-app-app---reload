@@ -1,372 +1,435 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Shipment Investment</title>
-  <style>
-    :root{
-      --bg:#eaf4ff; --card:#fff; --text:#0b1a2a; --muted:#4b6075; --border:#cfe2f7;
-      --btn:#2b6cb0; --btn2:#1f4f86; --danger:#c53030; --soft:#f7fbff;
-    }
-    body{ margin:0; font-family:Arial,sans-serif; background:var(--bg); color:var(--text); }
-    .wrap{ max-width:1600px; margin:18px auto; padding:0 12px; }
-    h1{ margin:0 0 12px 0; font-size:20px; }
-    .card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:12px;
-      padding:14px;
-      box-shadow:0 2px 8px rgba(0,0,0,.06);
-      margin-bottom:12px;
-    }
-    label{ display:block; font-size:12px; color:var(--muted); margin:10px 0 6px; }
-    input, select{
-      width:100%; padding:9px; border:1px solid var(--border); border-radius:10px;
-      background:var(--soft); color:var(--text); box-sizing:border-box;
-    }
-    .grid{ display:grid; grid-template-columns: repeat(6, 1fr); gap:10px; }
-    @media (max-width: 1100px){ .grid{ grid-template-columns: repeat(2, 1fr); } }
-    .btns{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
-    button{
-      padding:10px 14px; border-radius:10px; border:1px solid var(--border);
-      background:var(--btn); color:white; cursor:pointer; font-weight:700;
-    }
-    button.secondary{ background:white; color:var(--btn2); }
-    button.danger{ background:var(--danger); color:white; border-color:#f2b8b8; }
-    table{ width:100%; border-collapse:collapse; }
-    th, td{ padding:7px; border-bottom:1px solid var(--border); font-size:12px; text-align:left; white-space:nowrap; }
-    th{ position:sticky; top:0; background:var(--card); z-index:1; }
-    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:12px; }
-    .muted{ color:var(--muted); font-size:12px; }
-    .kpis{ display:grid; grid-template-columns: repeat(6, 1fr); gap:10px; margin-top:10px; }
-    @media (max-width: 1100px){ .kpis{ grid-template-columns: repeat(2, 1fr); } }
-    .kpi{ background:var(--soft); border:1px solid var(--border); border-radius:12px; padding:10px; }
-    .kpi .v{ font-size:16px; font-weight:800; margin-top:4px; }
-    .num{ text-align:right; }
-    .small{ font-size:11px; }
-  </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>BloomNext POS</title>
+  <link rel="stylesheet" href="/static/style.css"/>
 </head>
 <body>
-<div class="wrap">
-  <h1>Shipment Investment Calculator (Target Profit)</h1>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1>BloomNext POS</h1>
+        <div class="muted">MVP • Scan barcode → add to cart → checkout</div>
+      </div>
+      <div class="pill" id="statusPill">Connecting…</div>
+    </header>
 
-  <div class="card">
-    <div class="muted">
-      Total Investment = Invoice + Freight + Duty + Miami→NY + Expenses. Target Profit default 35% (editable).
-    </div>
+    <div class="grid">
+      <!-- LEFT: POS -->
+      <section class="card">
+        <h2>Register</h2>
 
-    <div class="grid" style="margin-top:8px;">
-      <div><label>AWB</label><input id="awb" placeholder="AWB-123456" /></div>
-      <div><label>Rate per KG ($/kg)</label><input id="rate_per_kg" type="number" step="0.0001" value="0" /></div>
-      <div><label>Duty rate (invoice %) e.g. 0.22</label><input id="duty_rate" type="number" step="0.0001" value="0.22" /></div>
-      <div><label>Miami → NY total ($)</label><input id="miami_to_ny_total" type="number" step="0.01" value="0" /></div>
-      <div><label>Expenses total ($) (placeholder)</label><input id="expenses_total" type="number" step="0.01" value="0" /></div>
-      <div><label>Target Profit % (of sales) e.g. 0.35</label><input id="target_profit_pct" type="number" step="0.01" value="0.35" /></div>
-    </div>
+        <div class="row">
+          <label>Barcode</label>
+          <div class="rowInline">
+            <input id="barcodeInput" placeholder="Scan or type barcode…" autocomplete="off"/>
+            <button id="addByBarcodeBtn">Add</button>
+          </div>
+          <div class="muted small">Tip: after scanning, press Enter.</div>
+        </div>
 
-    <div class="grid" style="margin-top:8px;">
-      <div><label>Miami→NY Weight FB</label><input id="w_fb" type="number" step="0.01" value="1.0" /></div>
-      <div><label>Miami→NY Weight HB</label><input id="w_hb" type="number" step="0.01" value="0.5" /></div>
-      <div><label>Miami→NY Weight QB</label><input id="w_qb" type="number" step="0.01" value="0.25" /></div>
+        <div class="row">
+          <label>Cart</label>
+          <div class="tableWrap">
+            <table class="table" id="cartTable">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="right">Price</th>
+                  <th class="center">Qty</th>
+                  <th class="right">Total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cartBody"></tbody>
+            </table>
+          </div>
+          <div class="cartEmpty muted" id="cartEmpty">Cart is empty. Add items by barcode or from Products.</div>
+        </div>
 
-      <div><label>Default KG/FB</label><input id="kg_fb" type="number" step="0.01" value="30" /></div>
-      <div><label>Default KG/HB</label><input id="kg_hb" type="number" step="0.01" value="15" /></div>
-      <div><label>Default KG/QB</label><input id="kg_qb" type="number" step="0.01" value="7.5" /></div>
-    </div>
+        <div class="row totals">
+          <div class="totalsLeft">
+            <div class="checkRow">
+              <input type="checkbox" id="taxEnabled"/>
+              <label for="taxEnabled">Apply tax</label>
+              <input class="taxRate" id="taxRate" type="number" step="0.0001" min="0" max="0.25" value="0.0000" />
+              <span class="muted small">rate</span>
+            </div>
+            <div class="muted small">Example NYC: 0.08875</div>
+          </div>
 
-    <div class="btns">
-      <button onclick="addLine()">Add Line</button>
-      <button class="secondary" onclick="addSample()">Add Sample</button>
-      <button class="secondary" onclick="clearLines()">Clear</button>
-      <button onclick="calculate()">Calculate</button>
-      <button class="secondary" onclick="exportExcel()">Export Excel</button>
+          <div class="totalsRight">
+            <div class="line"><span>Subtotal</span><span id="subtotal">$0.00</span></div>
+            <div class="line"><span>Tax</span><span id="tax">$0.00</span></div>
+            <div class="line big"><span>Total</span><span id="total">$0.00</span></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <label>Payment</label>
+          <div class="rowInline">
+            <select id="paymentMethod">
+              <option value="cash">Cash</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+            </select>
+            <button class="primary" id="checkoutBtn">Checkout</button>
+            <button class="danger" id="clearCartBtn">Clear</button>
+          </div>
+        </div>
+
+        <div class="row">
+          <label>Receipt / Result</label>
+          <pre id="receiptBox" class="receipt"></pre>
+        </div>
+      </section>
+
+      <!-- RIGHT: Products + Orders -->
+      <section class="card">
+        <h2>Products</h2>
+
+        <div class="row">
+          <div class="rowInline">
+            <input id="productSearch" placeholder="Search products…"/>
+            <button id="refreshProductsBtn">Refresh</button>
+          </div>
+        </div>
+
+        <div class="tableWrap">
+          <table class="table" id="productsTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Barcode</th>
+                <th class="right">Price</th>
+                <th class="center">Tax</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="productsBody"></tbody>
+          </table>
+        </div>
+
+        <hr/>
+
+        <h3>Add / Update Product</h3>
+        <div class="rowInline">
+          <input id="pName" placeholder="Name (e.g., Roses 60cm)"/>
+          <input id="pBarcode" placeholder="Barcode (optional)"/>
+        </div>
+        <div class="rowInline">
+          <input id="pPrice" type="number" step="0.01" min="0" placeholder="Price"/>
+          <label class="inlineCheck"><input type="checkbox" id="pTaxable" checked/> Taxable</label>
+          <button id="saveProductBtn">Save</button>
+        </div>
+        <div class="muted small" id="productHint">Tip: Save creates a new product. (Editing can be added next.)</div>
+
+        <hr/>
+
+        <h2>Recent Orders</h2>
+        <div class="rowInline">
+          <button id="refreshOrdersBtn">Refresh</button>
+          <span class="muted small">Last 20 checkouts</span>
+        </div>
+        <div class="orders" id="ordersBox"></div>
+      </section>
     </div>
   </div>
-
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Lines (buy price per BUNCH)</h3>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>FINCA</th>
-            <th>ORIGEN</th>
-            <th>PRODUCT</th>
-            <th>BOX TYPE</th>
-            <th class="num">BOXES</th>
-            <th class="num">BUNCH/BOX</th>
-            <th class="num">STEMS/BUNCH</th>
-            <th class="num">KG/BOX</th>
-            <th class="num">PRICE/BUNCH</th>
-            <th class="small">Actions</th>
-          </tr>
-        </thead>
-        <tbody id="lines_body"></tbody>
-      </table>
-    </div>
-    <div class="muted" style="margin-top:8px;">
-      KG/BOX auto-fills from defaults when you change box type. If you type KG, it overrides (Reset KG to restore default).
-    </div>
-  </div>
-
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Investment Summary</h3>
-    <div class="kpis" id="kpis"></div>
-  </div>
-
-  <div class="card">
-    <h3 style="margin:0 0 8px 0;">Line Allocation Results</h3>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>PRODUCT</th>
-            <th>BOX</th>
-            <th class="num">Boxes</th>
-            <th class="num">Invoice Line</th>
-            <th class="num">Freight</th>
-            <th class="num">Duty</th>
-            <th class="num">Miami</th>
-            <th class="num">Landed (no expenses)</th>
-            <th class="num">Cost/Box</th>
-            <th class="num">Cost/Bunch</th>
-          </tr>
-        </thead>
-        <tbody id="out_body"></tbody>
-      </table>
-    </div>
-  </div>
-
-</div>
 
 <script>
-function $(id){ return document.getElementById(id); }
-function num(id){ return parseFloat($(id).value || "0"); }
-function val(id){ return ($(id).value || "").toString(); }
+  const $ = (id) => document.getElementById(id);
 
-function kgDefaultFor(bt){
-  bt = (bt || "").toUpperCase();
-  if(bt === "FB") return num("kg_fb");
-  if(bt === "HB") return num("kg_hb");
-  if(bt === "QB") return num("kg_qb");
-  return num("kg_hb");
-}
+  let PRODUCTS = [];
+  let CART = []; // {product, qty}
 
-let lines = [];
-let kgOverride = [];
+  const money = (n) => "$" + (Number(n).toFixed(2));
+  const sum = (arr) => arr.reduce((a,b)=>a+b,0);
 
-function escapeHtml(str){
-  return (str ?? "").toString()
-    .replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;").replaceAll("'","&#039;");
-}
+  async function api(path, opts={}) {
+    const res = await fetch(path, { headers: { "Content-Type":"application/json" }, ...opts });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || ("HTTP " + res.status));
+    }
+    const ct = res.headers.get("content-type") || "";
+    if (ct.includes("application/json")) return res.json();
+    return res.text();
+  }
 
-function addLine(){
-  lines.push({
-    finca:"", origin:"", product:"",
-    box_type:"HB", boxes:0,
-    bunch_per_box:12, stems_per_bunch:25,
-    kg_per_box:kgDefaultFor("HB"),
-    price_per_bunch:0
-  });
-  kgOverride.push(false);
-  renderLines();
-}
+  function setStatus(ok, msg) {
+    const pill = $("statusPill");
+    pill.textContent = msg;
+    pill.className = "pill " + (ok ? "ok" : "bad");
+  }
 
-function addSample(){
-  lines = [
-    {finca:"Liberty", origin:"MIA", product:"ROSES MONDIAL 60", box_type:"HB", boxes:10, bunch_per_box:12, stems_per_bunch:25, kg_per_box:kgDefaultFor("HB"), price_per_bunch:1.75},
-    {finca:"Queens", origin:"MIA", product:"GYPSOPHILA", box_type:"QB", boxes:20, bunch_per_box:10, stems_per_bunch:10, kg_per_box:kgDefaultFor("QB"), price_per_bunch:2.10},
-  ];
-  kgOverride = [false,false];
-  renderLines();
-}
+  function cartTotals() {
+    const taxEnabled = $("taxEnabled").checked;
+    const taxRate = Number($("taxRate").value || "0");
 
-function clearLines(){
-  lines = [];
-  kgOverride = [];
-  $("lines_body").innerHTML = "";
-  $("kpis").innerHTML = "";
-  $("out_body").innerHTML = "";
-}
+    const subtotal = sum(CART.map(i => (i.product.price * i.qty)));
+    const taxableBase = sum(CART.filter(i => i.product.taxable).map(i => (i.product.price * i.qty)));
+    const tax = (taxEnabled ? (taxableBase * taxRate) : 0);
+    const total = subtotal + tax;
 
-function removeLine(i){
-  lines.splice(i,1);
-  kgOverride.splice(i,1);
-  renderLines();
-}
+    $("subtotal").textContent = money(subtotal);
+    $("tax").textContent = money(tax);
+    $("total").textContent = money(total);
 
-function resetKg(i){
-  kgOverride[i] = false;
-  const bt = (lines[i].box_type || "HB").toUpperCase();
-  lines[i].kg_per_box = kgDefaultFor(bt);
-  renderLines();
-}
+    return { subtotal, tax, total, taxEnabled, taxRate };
+  }
 
-function onEdit(e){
-  const el = e.target;
-  const i = parseInt(el.dataset.i, 10);
-  const k = el.dataset.k;
+  function renderCart() {
+    const body = $("cartBody");
+    body.innerHTML = "";
+    $("cartEmpty").style.display = CART.length ? "none" : "block";
 
-  let v = el.value;
+    for (const item of CART) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <div class="name">${escapeHtml(item.product.name)}</div>
+          <div class="muted small">${escapeHtml(item.product.barcode || "")}</div>
+        </td>
+        <td class="right">${money(item.product.price)}</td>
+        <td class="center">
+          <div class="qtyBox">
+            <button class="qtyBtn" data-act="dec" data-id="${item.product.id}">-</button>
+            <span class="qtyVal">${item.qty}</span>
+            <button class="qtyBtn" data-act="inc" data-id="${item.product.id}">+</button>
+          </div>
+        </td>
+        <td class="right">${money(item.product.price * item.qty)}</td>
+        <td class="right"><button class="link dangerText" data-act="remove" data-id="${item.product.id}">Remove</button></td>
+      `;
+      body.appendChild(tr);
+    }
 
-  if(["boxes","bunch_per_box","stems_per_bunch"].includes(k)) v = parseInt(v || "0", 10);
-  if(["kg_per_box","price_per_bunch"].includes(k)) v = parseFloat(v || "0");
+    body.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = Number(btn.getAttribute("data-id"));
+        const act = btn.getAttribute("data-act");
+        const idx = CART.findIndex(x => x.product.id === id);
+        if (idx < 0) return;
 
-  if(k === "box_type"){
-    lines[i][k] = (v || "HB").toUpperCase();
-    if(!kgOverride[i]){
-      lines[i].kg_per_box = kgDefaultFor(lines[i].box_type);
-      renderLines();
+        if (act === "inc") CART[idx].qty += 1;
+        if (act === "dec") CART[idx].qty = Math.max(1, CART[idx].qty - 1);
+        if (act === "remove") CART.splice(idx, 1);
+
+        renderCart();
+        cartTotals();
+      });
+    });
+  }
+
+  function renderProducts() {
+    const q = ($("productSearch").value || "").toLowerCase().trim();
+    const body = $("productsBody");
+    body.innerHTML = "";
+
+    const filtered = PRODUCTS.filter(p => {
+      if (!p.active) return false;
+      if (!q) return true;
+      return (p.name || "").toLowerCase().includes(q) || (p.barcode || "").toLowerCase().includes(q);
+    });
+
+    for (const p of filtered) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(p.name)}</td>
+        <td class="muted small">${escapeHtml(p.barcode || "")}</td>
+        <td class="right">${money(p.price)}</td>
+        <td class="center">${p.taxable ? "Yes" : "No"}</td>
+        <td class="right"><button class="link" data-id="${p.id}">Add</button></td>
+      `;
+      body.appendChild(tr);
+    }
+
+    body.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = Number(btn.getAttribute("data-id"));
+        const p = PRODUCTS.find(x => x.id === id);
+        if (!p) return;
+        addToCart(p);
+      });
+    });
+  }
+
+  function addToCart(product) {
+    const found = CART.find(x => x.product.id === product.id);
+    if (found) found.qty += 1;
+    else CART.push({ product, qty: 1 });
+    renderCart();
+    cartTotals();
+  }
+
+  async function refreshProducts() {
+    PRODUCTS = await api("/api/products?active_only=true");
+    renderProducts();
+  }
+
+  async function refreshOrders() {
+    const orders = await api("/api/orders/recent?limit=20");
+    const box = $("ordersBox");
+    box.innerHTML = "";
+
+    if (!orders.length) {
+      box.innerHTML = `<div class="muted">No orders yet.</div>`;
       return;
+    }
+
+    for (const o of orders) {
+      const div = document.createElement("div");
+      div.className = "orderCard";
+      div.innerHTML = `
+        <div class="orderHead">
+          <div><b>Order #${o.id}</b> <span class="muted small">${new Date(o.created_at).toLocaleString()}</span></div>
+          <div><b>${money(o.total)}</b> <span class="muted small">(${o.payment_method})</span></div>
+        </div>
+        <div class="muted small">${o.items.map(i => `${escapeHtml(i.name)} x${i.qty}`).join(" • ")}</div>
+      `;
+      box.appendChild(div);
     }
   }
 
-  if(k === "kg_per_box") kgOverride[i] = true;
-  lines[i][k] = v;
-}
+  async function addByBarcode() {
+    const code = ($("barcodeInput").value || "").trim();
+    if (!code) return;
 
-function renderLines(){
-  const tbody = $("lines_body");
-  tbody.innerHTML = "";
-  lines.forEach((ln, i) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${i+1}</td>
-      <td><input data-i="${i}" data-k="finca" value="${escapeHtml(ln.finca)}"></td>
-      <td><input data-i="${i}" data-k="origin" value="${escapeHtml(ln.origin)}"></td>
-      <td><input data-i="${i}" data-k="product" value="${escapeHtml(ln.product)}"></td>
-      <td>
-        <select data-i="${i}" data-k="box_type">
-          <option value="FB" ${ln.box_type==="FB"?"selected":""}>FB</option>
-          <option value="HB" ${ln.box_type==="HB"?"selected":""}>HB</option>
-          <option value="QB" ${ln.box_type==="QB"?"selected":""}>QB</option>
-        </select>
-      </td>
-      <td class="num"><input data-i="${i}" data-k="boxes" type="number" min="0" step="1" value="${ln.boxes}"></td>
-      <td class="num"><input data-i="${i}" data-k="bunch_per_box" type="number" min="1" step="1" value="${ln.bunch_per_box}"></td>
-      <td class="num"><input data-i="${i}" data-k="stems_per_bunch" type="number" min="1" step="1" value="${ln.stems_per_bunch}"></td>
-      <td class="num"><input data-i="${i}" data-k="kg_per_box" type="number" min="0" step="0.01" value="${ln.kg_per_box}"></td>
-      <td class="num"><input data-i="${i}" data-k="price_per_bunch" type="number" min="0" step="0.01" value="${ln.price_per_bunch}"></td>
-      <td class="small">
-        <button class="secondary" type="button" onclick="resetKg(${i})">Reset KG</button>
-        <button class="danger" type="button" onclick="removeLine(${i})">X</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
+    const p = await api("/api/products/lookup?barcode=" + encodeURIComponent(code));
+    if (!p) {
+      $("receiptBox").textContent = "Barcode not found: " + code + "\nAdd the product on the right (Products) then try again.";
+      return;
+    }
+    addToCart(p);
+    $("barcodeInput").value = "";
+    $("barcodeInput").focus();
+  }
+
+  async function checkout() {
+    if (!CART.length) return;
+
+    const t = cartTotals();
+    const payload = {
+      items: CART.map(i => ({ product_id: i.product.id, qty: i.qty })),
+      payment_method: $("paymentMethod").value,
+      tax_enabled: t.taxEnabled,
+      tax_rate: t.taxRate,
+      notes: null
+    };
+
+    const order = await api("/api/orders", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+
+    // Print receipt in the box
+    const lines = [];
+    lines.push(`BLOOMNEXT POS`);
+    lines.push(`Order #${order.id}`);
+    lines.push(`Time: ${new Date(order.created_at).toLocaleString()}`);
+    lines.push(`Payment: ${order.payment_method}`);
+    lines.push(`--------------------------------`);
+    for (const it of order.items) {
+      lines.push(`${it.name} x${it.qty}  ${money(it.line_total)}`);
+    }
+    lines.push(`--------------------------------`);
+    lines.push(`Subtotal: ${money(order.subtotal)}`);
+    lines.push(`Tax:      ${money(order.tax)}`);
+    lines.push(`TOTAL:    ${money(order.total)}`);
+    $("receiptBox").textContent = lines.join("\n");
+
+    // Clear cart
+    CART = [];
+    renderCart();
+    cartTotals();
+    await refreshOrders();
+  }
+
+  async function saveProduct() {
+    const name = ($("pName").value || "").trim();
+    const barcode = ($("pBarcode").value || "").trim();
+    const price = Number($("pPrice").value || "0");
+    const taxable = $("pTaxable").checked;
+
+    if (!name) {
+      $("productHint").textContent = "Name is required.";
+      return;
+    }
+
+    try {
+      await api("/api/products", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          barcode: barcode || null,
+          price,
+          taxable,
+          active: true
+        })
+      });
+      $("productHint").textContent = "Saved ✅";
+      $("pName").value = "";
+      $("pBarcode").value = "";
+      $("pPrice").value = "";
+      $("pTaxable").checked = true;
+      await refreshProducts();
+    } catch (e) {
+      $("productHint").textContent = "Error: " + e.message;
+    }
+  }
+
+  function escapeHtml(str) {
+    return (str ?? "").toString()
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  // Wire up events
+  $("addByBarcodeBtn").addEventListener("click", addByBarcode);
+  $("barcodeInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") addByBarcode();
   });
 
-  tbody.querySelectorAll("input,select").forEach(el => {
-    el.addEventListener("input", onEdit);
-    el.addEventListener("change", onEdit);
+  $("refreshProductsBtn").addEventListener("click", async () => {
+    await refreshProducts();
+    renderProducts();
   });
-}
 
-function payload(){
-  return {
-    awb: val("awb"),
-    rate_per_kg: num("rate_per_kg"),
-    duty_rate: num("duty_rate"),
-    miami_to_ny_total: num("miami_to_ny_total"),
-    expenses_total: num("expenses_total"),
-    target_profit_pct: num("target_profit_pct"),
-    box_weights: { FB: num("w_fb"), HB: num("w_hb"), QB: num("w_qb") },
-    kg_defaults: { FB: num("kg_fb"), HB: num("kg_hb"), QB: num("kg_qb") },
-    lines: lines.map(x => ({
-      finca: x.finca || "",
-      origin: x.origin || "",
-      product: x.product || "",
-      box_type: (x.box_type || "HB").toUpperCase(),
-      boxes: parseInt(x.boxes || 0, 10),
-      bunch_per_box: parseInt(x.bunch_per_box || 12, 10),
-      stems_per_bunch: parseInt(x.stems_per_bunch || 25, 10),
-      kg_per_box: parseFloat(x.kg_per_box || 0),
-      price_per_bunch: parseFloat(x.price_per_bunch || 0),
-    }))
-  };
-}
+  $("productSearch").addEventListener("input", renderProducts);
+  $("saveProductBtn").addEventListener("click", saveProduct);
 
-async function calculate(){
-  const res = await fetch("/calculate", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify(payload())
+  $("taxEnabled").addEventListener("change", cartTotals);
+  $("taxRate").addEventListener("input", cartTotals);
+
+  $("checkoutBtn").addEventListener("click", checkout);
+  $("clearCartBtn").addEventListener("click", () => {
+    CART = [];
+    renderCart();
+    cartTotals();
+    $("receiptBox").textContent = "";
   });
-  if(!res.ok){ alert(await res.text()); return; }
-  const data = await res.json();
-  renderKPIs(data.totals);
-  renderOut(data.lines);
-}
 
-function renderKPIs(t){
-  const el = $("kpis");
-  el.innerHTML = "";
-  const items = [
-    ["Total Invoice", "$ " + (t.total_invoice||0).toFixed(2)],
-    ["Freight Total", "$ " + (t.freight_total||0).toFixed(2)],
-    ["Duty Total", "$ " + (t.duty_total||0).toFixed(2)],
-    ["Miami→NY", "$ " + (t.miami_to_ny_total||0).toFixed(2)],
-    ["Expenses", "$ " + (t.expenses_total||0).toFixed(2)],
-    ["TOTAL INVESTMENT", "$ " + (t.total_investment||0).toFixed(2)],
-    ["Target Profit %", (t.target_profit_pct||0)],
-    ["Required Sales", "$ " + (t.required_sales||0).toFixed(2)],
-    ["Expected Profit $", "$ " + (t.expected_profit||0).toFixed(2)],
-    ["Total Boxes", t.total_boxes],
-    ["Total Kilos", t.total_kilos],
-  ];
-  items.forEach(([k,v]) => {
-    const d = document.createElement("div");
-    d.className = "kpi";
-    d.innerHTML = `<div class="muted">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div>`;
-    el.appendChild(d);
-  });
-}
+  $("refreshOrdersBtn").addEventListener("click", refreshOrders);
 
-function renderOut(linesOut){
-  const tbody = $("out_body");
-  tbody.innerHTML = "";
-  linesOut.forEach((r, i) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${i+1}</td>
-      <td>${escapeHtml(r.product || "")}</td>
-      <td>${escapeHtml(r.box_type || "")}</td>
-      <td class="num">${r.boxes}</td>
-      <td class="num">${(r.invoice_line||0).toFixed(2)}</td>
-      <td class="num">${(r.freight_alloc||0).toFixed(2)}</td>
-      <td class="num">${(r.duty_alloc||0).toFixed(2)}</td>
-      <td class="num">${(r.miami_alloc||0).toFixed(2)}</td>
-      <td class="num">${(r.landed_line||0).toFixed(2)}</td>
-      <td class="num">${(r.cost_per_box||0).toFixed(2)}</td>
-      <td class="num">${(r.cost_per_bunch||0).toFixed(4)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-async function exportExcel(){
-  const res = await fetch("/export.xlsx", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify(payload())
-  });
-  if(!res.ok){ alert(await res.text()); return; }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "shipment_investment.xlsx";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-addLine();
+  // Boot
+  (async function init(){
+    try {
+      await api("/health");
+      setStatus(true, "Online");
+    } catch {
+      setStatus(false, "Offline");
+    }
+    await refreshProducts();
+    await refreshOrders();
+    renderCart();
+    cartTotals();
+    $("barcodeInput").focus();
+  })();
 </script>
-
 </body>
 </html>
